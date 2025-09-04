@@ -1,14 +1,15 @@
 ## Endpoints
 
 ### GET /v1/dbase
-- Buscar base de dados
+- Esse endpoint tem como objetivo listar as bases de dados disponíveis, onde cada base corresponde a uma empresa específica. Ele permite identificar e selecionar a base de dados de uma empresa por meio de seu ID ou nome.
 
-Exemplo: https://app.coringaplus.com/v1/dbase
+URL: https://app.coringaplus.com/v1/dbase
+Método: GET
+Autenticação: Obrigatória
+Header:
+    Authorization: Basic <token>
 
-no header
-
-Authorization: Basic <token>
-
+Response:
 
 ```json
 {
@@ -25,15 +26,16 @@ Authorization: Basic <token>
 ```
 
 ### POST /v1/login
-- Autenticação do usuário
+- Esse endpoint é utilizado para autenticar o usuário no aplicativo.
+- No momento do login, o usuário deve informar em qual base de dados está cadastrado, garantindo que as credenciais sejam verificadas corretamente e que as informações retornadas pertençam à empresa correta.
 
-Exemplo: https://app.coringaplus.com/v1/login
+URL: https://app.coringaplus.com/v1/login
+Método: POST
+Autenticação: Obrigatória
+Header:
+    Authorization: Basic <token>
 
-no header
-
-Authorization: Basic <token>
-
-no body
+Body:
 
 ```json
 {
@@ -44,7 +46,7 @@ no body
 
 ```
 
-response
+Response:
 
 ```json
 {
@@ -60,13 +62,19 @@ response
 
 ```
 ### GET /v1/plantoes/{userId}/{baseId}
-- Buscar plantões do usuário
+- Esse endpoint retorna a lista de plantões agendados para o usuário em uma determinada base de dados.
+- Por padrão, são retornados os plantões do dia atual, mas o resultado pode incluir plantões próximos, dependendo da configuração do sistema.
 
-Exemplo: https://app.coringaplus.com/v1/plantoes/9/99
+URL: https://app.coringaplus.com/v1/plantoes/{userId}/{baseId}
+Método: GET
+Autenticação: Obrigatória
+Header:
+    Authorization: Basic <token>
 
-no header
+#### Parâmetros de Rota
 
-Authorization: Basic <token>
+userId: ID do usuário (médico/profissional).
+baseId: ID da base de dados (empresa), obtido via /v1/dbase.
 
 ```json
 {
@@ -118,15 +126,21 @@ Authorization: Basic <token>
 }
 ```
 
-## GET /v1/plantao/{userId}/{baseId}
-- Buscar plantão do usuário
+## GET /v1/plantao/{plantaoId}/{baseId}
+- Esse endpoint retorna os detalhes completos de um plantão específico do usuário, identificado pelo ID do plantão.
+- Funciona como a visualização individual (show) de um plantão.
 
-Exemplo: https://app.coringaplus.com/v1/plantao/1875/99
+URL: https://app.coringaplus.com/v1/plantao/1875/99
+Método: GET
+Autenticação: Obrigatória
+Header:
+    Authorization: Basic <token>
 
-no header
+Parâmetros de Rota:
+    plantaoId: 1875
+    baseId: 99
 
-Authorization: Basic <token>
-
+Response:
 ```json
 {
     "status": "success",
@@ -157,21 +171,23 @@ Authorization: Basic <token>
 
 
 ## PUT /v1/registro
-- Registrar entrada/saída
+- Esse endpoint é responsável pelo registro de ponto dos profissionais, tanto na entrada quanto na saída do plantão.
+- O registro é validado com base na geolocalização do usuário em relação à unidade hospitalar, respeitando as regras de tolerância de entrada/saída.
+- Além disso, é necessário o envio de uma selfie como comprovação do registro.
 
-Exemplo: https://app.coringaplus.com/v1/registro
+URL: https://app.coringaplus.com/v1/registro
+Método: PUT
+Autenticação: Obrigatória
+Header:
+    Authorization: Basic <token>
 
-no header
-
-Authorization: Basic <token>
-
-no body
+Body:
 
 ```json
 {
     "plantaoId": "32", 
     "dataHora": "2025-06-28 06:50", 
-    "tipo": "E",
+    "tipo": "E", // E=Entrada, S=Saída
     "database": "99",
     "longitude": "0.120000000",
     "latitude": "0.32000000",
@@ -179,7 +195,7 @@ no body
 }
 ```
 
-response
+Response:
 
 ```json
 {
@@ -189,52 +205,3 @@ response
     }
 }
 ```
-
-
-## PUT /v1/cadastroexterno
-- Registrar entrada/saída
-
-Exemplo: https://app.coringaplus.com/v1/cadastroexterno
-
-no header
-
-Authorization: Basic <token>
-
-no body
-
-```json
-{
-    "nome": "José ROberto", 
-    "nome_social": "", 
-    "cpf": "1234567890120",
-    "data_nascimento": "1969-08-19",
-    "graduacao": "Médico",
-    "conselho_numero": "325621",
-    "conselho_uf": "RJ",
-    "conselho_orgao": "CRM",
-    "rg_numero": "123456",
-    "rg_orgao": "Detran",
-    "rg_data_emissao": "1995-05-13",
-    "rg_uf": "RJ",
-    "nacionalidade": "Brasileiro",
-    "naturalidade": "Bom Jesus do Itabapoana",
-    "pai": "Francisco",
-    "mae": "Rita",
-    "database": "99"	
-}
-```
-
-response
-
-```json
-{
-    "status": "success",
-    "data": {
-        "retorno": "Cadastro: José ROberto Feito com sucesso!"
-    }
-}
-```
-
-
-
-
