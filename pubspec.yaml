@@ -51,6 +51,7 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+  flutter_native_splash: ^2.4.3
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -67,6 +68,32 @@ flutter:
   assets:
     - assets/images/logo.png
     - assets/images/3836025.jpg
+
+# Native splash screen configuration (Android/iOS)
+flutter_native_splash:
+  # Use a unified light background to stay clean/minimal in all modes
+  color: "#EFF2F7"  # app background light
+  color_dark: "#EFF2F7"
+
+  # Centered logo; provide full logo without distortion
+  image: assets/images/logo.png
+  image_dark: assets/images/logo.png
+
+  android: true
+  ios: true
+  web: false
+
+  # Improve layout behavior
+  android_gravity: center
+  ios_content_mode: scaleAspectFit
+
+  # Android 12+ specific configuration
+  android_12:
+    # Provide a specific image with safe padding to avoid any cropping
+    # If you don't have a dedicated asset yet, this will reuse the same.
+    image: assets/images/logo.png
+    # Make the icon background same as overall background so the rounded shape is invisible
+    icon_background_color: "#EFF2F7"
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images
