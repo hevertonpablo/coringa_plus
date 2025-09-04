@@ -58,8 +58,7 @@ class _LoginScreenState extends State<LoginScreen> {
         selectedPerfil = values.length == 1 ? values.first : null;
         isLoading = false;
       });
-    } catch (e) {
-      print('Erro ao carregar perfis: $e');
+    } catch (e) {     
       setState(() {
         isLoading = false;
       });
@@ -84,7 +83,7 @@ class _LoginScreenState extends State<LoginScreen> {
       );
 
       _showMessage('Bem-vindo, ${user.nome}');
-
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const SelfieCaptureScreen()),

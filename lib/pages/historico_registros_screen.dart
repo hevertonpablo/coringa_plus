@@ -31,11 +31,13 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
 
     try {
       final plantoes = await _plantaoController.listarPlantoes();
+      if (!mounted) return;
       setState(() {
         _plantoes = plantoes;
         _isLoading = false;
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _isLoading = false;
       });
@@ -260,7 +262,7 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
           _filtroStatus = value;
         });
       },
-      selectedColor: Colors.teal.withOpacity(0.3),
+      selectedColor: Colors.teal.withValues(alpha: 0.3),
       checkmarkColor: Colors.teal,
     );
   }

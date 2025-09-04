@@ -20,9 +20,11 @@ class LocationValidatorController {
       await Geolocator.requestPermission();
     }
 
-    // Pega localização atual
+    // Pega localização atual (API nova com LocationSettings)
     final Position posicaoAtual = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+      ),
     );
 
     final double distancia = Geolocator.distanceBetween(
@@ -30,11 +32,7 @@ class LocationValidatorController {
       unidadeLongitude,
       posicaoAtual.latitude,
       posicaoAtual.longitude,
-    );
-
-    print(
-      '📍 Distância do usuário até unidade: ${distancia.toStringAsFixed(2)} metros',
-    );
+    );   
 
     return distancia <= raioPermitidoEmMetros;
   }

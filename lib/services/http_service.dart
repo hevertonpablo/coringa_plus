@@ -14,6 +14,7 @@ class HttpService implements IHttpService {
         'Content-Type': 'application/json',
       };
 
+  @override
   Future<dynamic> get(String endpoint) async {
     final url = Uri.parse('$baseUrl$endpoint');
 
@@ -27,6 +28,7 @@ class HttpService implements IHttpService {
     }
   }
 
+  @override
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
     final url = Uri.parse('$baseUrl$endpoint');
 
