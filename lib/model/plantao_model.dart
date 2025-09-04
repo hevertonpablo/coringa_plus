@@ -15,6 +15,8 @@ class Plantao {
   final DateTime dtSaida;
   final DateTime? dtEntradaPonto;
   final DateTime? dtSaidaPonto;
+  final int? toleranciaAntecipada;
+  final int? toleranciaAtraso;
 
   Plantao({
     required this.plantaoId,
@@ -33,6 +35,8 @@ class Plantao {
     required this.dtSaida,
     this.dtEntradaPonto,
     this.dtSaidaPonto,
+    this.toleranciaAntecipada,
+    this.toleranciaAtraso,
   });
 
   factory Plantao.fromJson(Map<String, dynamic> json) {
@@ -57,6 +61,8 @@ class Plantao {
       dtSaidaPonto: json['dt_saida_ponto'] != null
           ? DateTime.tryParse(json['dt_saida_ponto'])
           : null,
+      toleranciaAntecipada: json['tolerancia_antecipada_entrada'],
+      toleranciaAtraso: json['tolerancia_atraso_entrada'],
     );
   }
 
@@ -78,6 +84,8 @@ class Plantao {
       'dt_saida': dtSaida.toIso8601String(),
       'dt_entrada_ponto': dtEntradaPonto?.toIso8601String(),
       'dt_saida_ponto': dtSaidaPonto?.toIso8601String(),
+      'tolerancia_antecipada_entrada': toleranciaAntecipada,
+      'tolerancia_atraso_entrada': toleranciaAtraso,
     };
   }
 }

@@ -4,6 +4,7 @@ import 'controller/login_controller.dart';
 import 'interfaces/http_interfaces.dart';
 import 'services/http_service.dart';
 import 'services/plantao_service.dart';
+import 'services/registro_service.dart';
 
 final getIt = GetIt.instance;
 
@@ -17,4 +18,5 @@ void setupLocator() {
 
   getIt.registerFactory(() => LoginController(getIt<IHttpService>()));
   getIt.registerFactory(() => PlantaoService(getIt<IHttpService>()));
+  getIt.registerFactory(() => RegistroService(getIt<IHttpService>()));
 }

@@ -52,6 +52,10 @@ class _LoginScreenState extends State<LoginScreen> {
 
       setState(() {
         perfilItems = items;
+        // Garante que o valor selecionado seja válido após recarregar os itens.
+        final values = items.map((i) => i.value).whereType<String>().toList();
+        // Se houver apenas um perfil disponível, seleciona automaticamente; caso contrário, zera a seleção.
+        selectedPerfil = values.length == 1 ? values.first : null;
         isLoading = false;
       });
     } catch (e) {
@@ -138,9 +142,14 @@ class _LoginScreenState extends State<LoginScreen> {
                 isLoading
                     ? const CircularProgressIndicator()
                     : DropdownButtonFormField<String>(
+                        isExpanded: true,
                         decoration: _inputDecoration('Selecione o perfil'),
+                        hint: const Text('Selecione o perfil'),
                         items: perfilItems,
-                        value: selectedPerfil,
+                        // Evita erro quando o valor atual não existe mais na lista de itens
+                        value: perfilItems.map((e) => e.value).contains(selectedPerfil)
+                            ? selectedPerfil
+                            : null,
                         onChanged: (value) {
                           setState(() {
                             selectedPerfil = value;

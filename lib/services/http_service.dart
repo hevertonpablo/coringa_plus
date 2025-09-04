@@ -20,18 +20,34 @@ class HttpService implements IHttpService {
     final response = await http.get(url, headers: defaultHeaders);
 
     if (response.statusCode == 200) {
-      print(response.body);
+      
       return json.decode(response.body);
     } else {
       throw Exception('Erro ${response.statusCode}: ${response.reasonPhrase}');
     }
   }
 
-  // Se precisar no futuro:
   Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
     final url = Uri.parse('$baseUrl$endpoint');
 
     final response = await http.post(
+      url,
+      headers: defaultHeaders,
+      body: json.encode(body),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return json.decode(response.body);
+    } else {
+      throw Exception('Erro ${response.statusCode}: ${response.reasonPhrase}');
+    }
+  }
+
+  @override
+  Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
+    final url = Uri.parse('$baseUrl$endpoint');
+
+    final response = await http.put(
       url,
       headers: defaultHeaders,
       body: json.encode(body),

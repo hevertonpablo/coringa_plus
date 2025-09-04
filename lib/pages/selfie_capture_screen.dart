@@ -1,9 +1,16 @@
+import 'dart:io';
+
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 
 import '../controller/plantao_controller.dart';
-import 'register_screen.dart';
+import '../helper/tolerance_validator.dart';
+import '../locator.dart';
+import '../services/auth_service.dart';
+import '../services/registro_service.dart';
+import 'historico_registros_screen.dart';
 
 class SelfieCaptureScreen extends StatefulWidget {
   const SelfieCaptureScreen({super.key});
@@ -16,6 +23,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   int _currentIndex = 0;
 
   late final PlantaoController _plantaoController;
+  late final RegistroService _registroService;
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
 
@@ -25,6 +33,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   );
 
   late DateTime _selectedDate;
+  bool _isRegistering = false;
+  String _statusMessage = '';
 
   @override
   void initState() {
@@ -32,6 +42,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     _selectedDate = DateTime.now();
     _initializeControllerFuture = _initCamera();
     _plantaoController = PlantaoController();
+    _registroService = getIt<RegistroService>();
     _inicializarController();
   }
 
@@ -47,7 +58,47 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   Future<void> _inicializarController() async {
     await _plantaoController.inicializar();
     if (!mounted) return;
+    _updateStatusMessage();
     setState(() {}); // Atualiza a UI após carregar plantões
+  }
+
+  void _updateStatusMessage() {
+    final plantao = _plantaoController.plantaoAtual;
+    if (plantao == null) {
+      setState(() {
+        _statusMessage = 'Nenhum plantão encontrado';
+      });
+      return;
+    }
+
+    final agora = DateTime.now();
+    final mensagem = ToleranceValidator.getMensagemStatus(
+      agora: agora,
+      horarioEntrada: plantao.dtEntrada,
+      horarioSaida: plantao.dtSaida,
+      toleranciaAntecipada: plantao.toleranciaAntecipada ?? 5,
+      toleranciaAtraso: plantao.toleranciaAtraso ?? 10,
+      dtEntradaPonto: plantao.dtEntradaPonto,
+      dtSaidaPonto: plantao.dtSaidaPonto,
+    );
+
+    setState(() {
+      _statusMessage = mensagem;
+    });
+  }
+
+  Color _getStatusColor() {
+    if (_statusMessage.contains('permitida agora')) {
+      return Colors.green;
+    } else if (_statusMessage.contains('permitida em')) {
+      return Colors.orange;
+    } else if (_statusMessage.contains('expirado') || _statusMessage.contains('Fora do')) {
+      return Colors.red;
+    } else if (_statusMessage.contains('completamente registrado')) {
+      return Colors.blue;
+    } else {
+      return Colors.grey;
+    }
   }
 
   @override
@@ -57,23 +108,112 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   void _captureImage() async {
-    await _initializeControllerFuture;
-    final dentro = await _plantaoController.validarLocalizacaoUsuario();
+    if (_isRegistering) return;
 
-    if (!dentro) {
-      if (!mounted) return;
-      showDialog(
-        context: context,
-        builder: (_) => const AlertDialog(
-          title: Text("Fora da Unidade"),
-          content: Text("Você está fora do raio permitido da unidade."),
-        ),
+    setState(() {
+      _isRegistering = true;
+    });
+
+    try {
+      await _initializeControllerFuture;
+      
+      final plantao = _plantaoController.plantaoAtual;
+      if (plantao == null) {
+        _showMessage('Nenhum plantão encontrado', isError: true);
+        return;
+      }
+
+      // Validar localização
+      final dentro = await _plantaoController.validarLocalizacaoUsuario();
+      if (!dentro) {
+        _showMessage('Você está fora do raio permitido da unidade', isError: true);
+        return;
+      }
+
+      // Obter posição atual
+      final position = await Geolocator.getCurrentPosition();
+      
+      // Validar tolerâncias de horário
+      final agora = DateTime.now();
+      final tipoRegistro = ToleranceValidator.determinarTipoRegistro(
+        dtEntradaPonto: plantao.dtEntradaPonto,
+        dtSaidaPonto: plantao.dtSaidaPonto,
       );
-      return;
-    }
 
-    final image = await _controller.takePicture();
-    print("📸 Imagem capturada: ${image.path}");
+      bool horarioPermitido = false;
+      if (tipoRegistro == 'E') {
+        horarioPermitido = ToleranceValidator.isEntradaPermitida(
+          agora: agora,
+          horarioEntrada: plantao.dtEntrada,
+          toleranciaAntecipada: plantao.toleranciaAntecipada ?? 5,
+          toleranciaAtraso: plantao.toleranciaAtraso ?? 10,
+        );
+      } else {
+        horarioPermitido = ToleranceValidator.isSaidaPermitida(
+          agora: agora,
+          horarioEntradaRegistrada: plantao.dtEntradaPonto,
+        );
+      }
+
+      if (!horarioPermitido) {
+        final mensagem = tipoRegistro == 'E' 
+            ? 'Fora do horário permitido para entrada'
+            : 'Não é possível registrar saída ainda';
+        _showMessage(mensagem, isError: true);
+        return;
+      }
+
+      // Capturar selfie
+      final image = await _controller.takePicture();
+      
+      // Obter usuário logado
+      final user = await AuthService.getUser();
+      if (user == null) {
+        _showMessage('Usuário não encontrado', isError: true);
+        return;
+      }
+
+      // Enviar registro
+      final response = await _registroService.registrarPonto(
+        plantaoId: plantao.plantaoId,
+        dataHora: agora,
+        tipo: tipoRegistro,
+        database: user.database,
+        longitude: position.longitude,
+        latitude: position.latitude,
+        selfieFile: File(image.path),
+      );
+
+      if (response['status'] == 'success') {
+        final tipoTexto = tipoRegistro == 'E' ? 'Entrada' : 'Saída';
+        _showMessage('$tipoTexto registrada com sucesso!', isError: false);
+        
+        // Recarregar plantões para atualizar status
+        await _plantaoController.inicializar();
+        _updateStatusMessage();
+      } else {
+        _showMessage('Erro ao registrar ponto', isError: true);
+      }
+
+    } catch (e) {
+      _showMessage('Erro: ${e.toString()}', isError: true);
+    } finally {
+      setState(() {
+        _isRegistering = false;
+      });
+    }
+  }
+
+  void _showMessage(String message, {required bool isError}) {
+    if (!mounted) return;
+    
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: isError ? Colors.red : Colors.green,
+        duration: const Duration(seconds: 3),
+      ),
+    );
   }
 
   Widget _buildSelfiePage() {
@@ -109,6 +249,23 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                 _plantaoController.getNextPlantao() ??
                     "Nenhum plantão agendado",
                 style: const TextStyle(fontSize: 13),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _getStatusColor(),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _statusMessage,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
               ),
               const SizedBox(height: 12),
               SizedBox(
@@ -159,11 +316,20 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: _captureImage,
-                  child: const Text(
-                    "REGISTRAR",
-                    style: TextStyle(fontSize: 16, color: Colors.white),
-                  ),
+                  onPressed: _isRegistering ? null : _captureImage,
+                  child: _isRegistering
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Text(
+                          "REGISTRAR",
+                          style: TextStyle(fontSize: 16, color: Colors.white),
+                        ),
                 ),
               ),
             ],
@@ -177,7 +343,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   Widget build(BuildContext context) {
     final pages = [
       _buildSelfiePage(),
-      const PlantoesPage(), // ← Sua outra tela
+      const HistoricoRegistrosScreen(), // ← Tela de histórico
     ];
 
     return Scaffold(
@@ -193,8 +359,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
             label: "Registrar",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_today),
-            label: "Plantões",
+            icon: Icon(Icons.history),
+            label: "Histórico",
           ),
         ],
       ),

@@ -40,7 +40,7 @@ class PlantaoController {
     // Ordena os plantões por data de entrada
     plantoes.sort((a, b) {
       final aDt = a.dtEntrada;
-      final bDt = a.dtEntrada;
+      final bDt = b.dtEntrada;
       return aDt.compareTo(bDt);
     });
 

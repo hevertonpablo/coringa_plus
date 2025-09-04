@@ -80,24 +80,24 @@
 **Prioridade:** 🔴 **ALTA** - Essencial para experiência do usuário
 
 ### 📸 Registro de Presença (Melhorias Críticas)
-- ❌ **Envio do registro:** Integração com endpoint `PUT /v1/registro`
-- ❌ **Validação de tolerância:** Implementar tolerância de entrada (5min antecipada, 10min atraso)
-- ❌ **Controle entrada/saída:** Distinção entre registro de entrada (E) e saída (S)
-- ❌ **Timestamp preciso:** Validação de horário baseado em tolerâncias
-- ❌ **Feedback de sucesso:** Confirmação visual após registro
-- ❌ **Histórico de registros:** Visualização de pontos já registrados
+- ✅ **Envio do registro:** Integração com endpoint `PUT /v1/registro`
+- ✅ **Validação de tolerância:** Implementar tolerância de entrada (5min antecipada, 10min atraso)
+- ✅ **Controle entrada/saída:** Distinção entre registro de entrada (E) e saída (S)
+- ✅ **Timestamp preciso:** Validação de horário baseado em tolerâncias
+- ✅ **Feedback de sucesso:** Confirmação visual após registro
+- ✅ **Histórico de registros:** Visualização de pontos já registrados
 
 **Prioridade:** 🔴 **ALTA** - Funcionalidade core do sistema
 
 ### 📅 Tela de Plantões (Melhorias Essenciais)
-- ❌ **Interface dedicada:** Criar tela específica para listagem de plantões
-- ❌ **Status com cores:**
+- ✅ **Interface dedicada:** Criar tela específica para listagem de plantões
+- ✅ **Status com cores:**
   - 🟢 Verde → Plantões realizados (com `dt_entrada_ponto` e `dt_saida_ponto`)
   - 🔴 Vermelho → Plantões não realizados (sem registros de ponto)
   - 🟠 Laranja → Plantões futuros (data > hoje)
-- ❌ **Filtros por status:** Opção de filtrar por realizado/não realizado/futuro
-- ❌ **Detalhes expandidos:** Visualização completa de informações do plantão
-- ❌ **Histórico completo:** Plantões passados, presentes e futuros
+- ✅ **Filtros por status:** Opção de filtrar por realizado/não realizado/futuro
+- ✅ **Detalhes expandidos:** Visualização completa de informações do plantão
+- ✅ **Histórico completo:** Plantões passados, presentes e futuros
 
 **Prioridade:** 🟡 **MÉDIA** - Importante para gestão completa
 
