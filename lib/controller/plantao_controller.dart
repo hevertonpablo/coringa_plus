@@ -46,7 +46,6 @@ class PlantaoController {
 
     // Retorna o primeiro plantão cujo horário de saída ainda não passou
     for (var p in plantoes) {
-      final entrada = p.dtEntrada;
       final saida = p.dtSaida;
       if (agora.isBefore(saida)) {
         return p;

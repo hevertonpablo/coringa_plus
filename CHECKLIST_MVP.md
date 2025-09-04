@@ -10,7 +10,7 @@
 | Tela de Login | ✅ Implementado | 90% |
 | Registro de Presença | 🟡 Parcial | 60% |
 | Tela de Plantões | 🟡 Parcial | 40% |
-| Splash Screen | ❌ Não Implementado | 0% |
+| Splash Screen | ✅ Implementado | 100% |
 
 ---
 
@@ -71,11 +71,11 @@
 ## ❌ FUNCIONALIDADES FALTANTES PARA MVP
 
 ### 🎬 Splash Screen (Crítico)
-- ❌ **Tela inicial:** Criar splash screen antes do login
-- ❌ **Animações:** Implementar animações leves e atrativas
-- ❌ **Logo animado:** Animação do logo da empresa
-- ❌ **Loading state:** Indicador de carregamento inicial
-- ❌ **Transição suave:** Animação para tela de login
+- ✅ **Tela inicial:** Splash nativa configurada (Android/iOS) via `flutter_native_splash`
+- ✅ **Animações:** Intro animada opcional implementada em `lib/pages/splash_screen.dart`
+- ✅ **Logo animado:** Fade + scale sutis aplicados na intro animada
+- ✅ **Loading state:** `CircularProgressIndicator` na intro animada
+- ✅ **Transição suave:** Fade para `LoginScreen`
 
 **Prioridade:** 🔴 **ALTA** - Essencial para experiência do usuário
 
@@ -149,23 +149,18 @@
 
 **Solução:** Criar `PlantoesList` com status coloridos e filtros.
 
-### 4. **Ausência de Splash Screen**
-**Problema:** App inicia diretamente na tela de login.
-
-**Impacto:** Experiência do usuário menos profissional.
-
-**Solução:** Criar `SplashScreen` com animações e carregamento inicial.
+### 4. **Splash Screen**
+**Status:** Resolvido — Splash nativa implementada e intro animada disponível.
 
 ---
 
 ## 📋 PLANO DE IMPLEMENTAÇÃO PARA MVP COMPLETO
 
 ### Sprint 1 - Funcionalidades Críticas (1-2 semanas)
-1. **Implementar Splash Screen**
-   - Criar `SplashScreen` widget
-   - Adicionar animações do logo
-   - Configurar timer para transição
-   - Integrar no fluxo principal
+1. **Implementar Splash Screen** — Concluído
+   - Criado `SplashScreen` widget com animações
+   - Configurado timer e transição suave
+   - Integrado fluxo com `flutter_native_splash`
 
 2. **Completar Registro de Presença**
    - Implementar chamada para `PUT /v1/registro`
@@ -217,9 +212,9 @@
 - [ ] Filtros funcionam adequadamente
 
 ### Splash Screen
-- [ ] Animação é exibida por tempo adequado
-- [ ] Transição para login é suave
-- [ ] Logo e branding estão corretos
+- [x] Animação é exibida por tempo adequado
+- [x] Transição para login é suave
+- [x] Logo e branding estão corretos
 
 ---
 
