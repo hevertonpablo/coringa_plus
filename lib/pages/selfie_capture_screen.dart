@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:camera/camera.dart';
@@ -35,6 +36,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   late DateTime _selectedDate;
   bool _isRegistering = false;
   String _statusMessage = '';
+  Timer? _statusTimer;
 
   @override
   void initState() {
@@ -44,6 +46,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     _plantaoController = PlantaoController();
     _registroService = getIt<RegistroService>();
     _inicializarController();
+    _startStatusTimer();
   }
 
   Future<void> _initCamera() async {
@@ -62,6 +65,37 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     setState(() {}); // Atualiza a UI após carregar plantões
   }
 
+  void _startStatusTimer() {
+    // Calcula o tempo até o próximo minuto
+    final agora = DateTime.now();
+    final proximoMinuto = DateTime(
+      agora.year,
+      agora.month,
+      agora.day,
+      agora.hour,
+      agora.minute + 1,
+      0,
+    );
+    final tempoAteProximoMinuto = proximoMinuto.difference(agora);
+
+    // Timer inicial para sincronizar com o início do próximo minuto
+    Timer(tempoAteProximoMinuto, () {
+      if (!mounted) return;
+      _updateStatusMessage();
+
+      // Depois do primeiro timer, cria o timer periódico a cada minuto
+      _statusTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
+        if (!mounted) {
+          timer.cancel();
+          return;
+        }
+        _updateStatusMessage();
+      });
+    });
+  }
+
+  /// Atualiza a mensagem de status baseada no horário atual
+  /// Este método é chamado automaticamente a cada minuto pelo timer
   void _updateStatusMessage() {
     final plantao = _plantaoController.plantaoAtual;
     if (plantao == null) {
@@ -92,7 +126,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       return Colors.green;
     } else if (_statusMessage.contains('permitida em')) {
       return Colors.orange;
-    } else if (_statusMessage.contains('expirado') || _statusMessage.contains('Fora do')) {
+    } else if (_statusMessage.contains('expirado') ||
+        _statusMessage.contains('Fora do')) {
       return Colors.red;
     } else if (_statusMessage.contains('completamente registrado')) {
       return Colors.blue;
@@ -103,6 +138,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
   @override
   void dispose() {
+    _statusTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -116,7 +152,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
     try {
       await _initializeControllerFuture;
-      
+
       final plantao = _plantaoController.plantaoAtual;
       if (plantao == null) {
         _showMessage('Nenhum plantão encontrado', isError: true);
@@ -126,13 +162,16 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       // Validar localização
       final dentro = await _plantaoController.validarLocalizacaoUsuario();
       if (!dentro) {
-        _showMessage('Você está fora do raio permitido da unidade', isError: true);
+        _showMessage(
+          'Você está fora do raio permitido da unidade',
+          isError: true,
+        );
         return;
       }
 
       // Obter posição atual
       final position = await Geolocator.getCurrentPosition();
-      
+
       // Validar tolerâncias de horário
       final agora = DateTime.now();
       final tipoRegistro = ToleranceValidator.determinarTipoRegistro(
@@ -156,7 +195,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       }
 
       if (!horarioPermitido) {
-        final mensagem = tipoRegistro == 'E' 
+        final mensagem = tipoRegistro == 'E'
             ? 'Fora do horário permitido para entrada'
             : 'Não é possível registrar saída ainda';
         _showMessage(mensagem, isError: true);
@@ -165,7 +204,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
       // Capturar selfie
       final image = await _controller.takePicture();
-      
+
       // Obter usuário logado
       final user = await AuthService.getUser();
       if (user == null) {
@@ -187,14 +226,13 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       if (response['status'] == 'success') {
         final tipoTexto = tipoRegistro == 'E' ? 'Entrada' : 'Saída';
         _showMessage('$tipoTexto registrada com sucesso!', isError: false);
-        
+
         // Recarregar plantões para atualizar status
         await _plantaoController.inicializar();
         _updateStatusMessage();
       } else {
         _showMessage('Erro ao registrar ponto', isError: true);
       }
-
     } catch (e) {
       _showMessage('Erro: ${e.toString()}', isError: true);
     } finally {
@@ -206,7 +244,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
   void _showMessage(String message, {required bool isError}) {
     if (!mounted) return;
-    
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),

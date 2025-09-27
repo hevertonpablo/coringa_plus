@@ -1,4 +1,20 @@
 class ToleranceValidator {
+  /// Formata tempo em minutos para um formato mais amigável
+  static String _formatarTempo(int minutos) {
+    if (minutos >= 60) {
+      final horas = minutos ~/ 60;
+      final minutosRestantes = minutos % 60;
+
+      if (minutosRestantes == 0) {
+        return '${horas}h';
+      } else {
+        return '${horas}h ${minutosRestantes}m';
+      }
+    } else {
+      return '$minutos minutos';
+    }
+  }
+
   /// Valida se o horário atual está dentro da tolerância permitida para entrada
   static bool isEntradaPermitida({
     required DateTime agora,
@@ -6,9 +22,13 @@ class ToleranceValidator {
     required int toleranciaAntecipada, // em minutos
     required int toleranciaAtraso, // em minutos
   }) {
-    final inicioPermitido = horarioEntrada.subtract(Duration(minutes: toleranciaAntecipada));
-    final fimPermitido = horarioEntrada.add(Duration(minutes: toleranciaAtraso));
-    
+    final inicioPermitido = horarioEntrada.subtract(
+      Duration(minutes: toleranciaAntecipada),
+    );
+    final fimPermitido = horarioEntrada.add(
+      Duration(minutes: toleranciaAtraso),
+    );
+
     return agora.isAfter(inicioPermitido) && agora.isBefore(fimPermitido);
   }
 
@@ -20,7 +40,7 @@ class ToleranceValidator {
     if (horarioEntradaRegistrada == null) {
       return false; // Não pode sair sem ter registrado entrada
     }
-    
+
     return agora.isAfter(horarioEntradaRegistrada);
   }
 
@@ -34,7 +54,9 @@ class ToleranceValidator {
     } else if (dtSaidaPonto == null) {
       return 'S'; // Saída
     } else {
-      throw Exception('Plantão já foi completamente registrado (entrada e saída)');
+      throw Exception(
+        'Plantão já foi completamente registrado (entrada e saída)',
+      );
     }
   }
 
@@ -54,12 +76,19 @@ class ToleranceValidator {
 
     if (dtEntradaPonto == null) {
       // Validando entrada
-      final inicioPermitido = horarioEntrada.subtract(Duration(minutes: toleranciaAntecipada));
-      final fimPermitido = horarioEntrada.add(Duration(minutes: toleranciaAtraso));
-      
+      final inicioPermitido = horarioEntrada.subtract(
+        Duration(minutes: toleranciaAntecipada),
+      );
+      final fimPermitido = horarioEntrada.add(
+        Duration(minutes: toleranciaAtraso),
+      );
+
       if (agora.isBefore(inicioPermitido)) {
         final minutosRestantes = inicioPermitido.difference(agora).inMinutes;
-        return 'Entrada permitida em $minutosRestantes minutos';
+        if (minutosRestantes == 0) {
+          return 'Entrada permitida agora';
+        }
+        return 'Entrada permitida em ${_formatarTempo(minutosRestantes)}';
       } else if (agora.isAfter(fimPermitido)) {
         return 'Prazo para entrada expirado';
       } else {
@@ -69,7 +98,10 @@ class ToleranceValidator {
       // Validando saída
       if (agora.isBefore(horarioSaida)) {
         final minutosRestantes = horarioSaida.difference(agora).inMinutes;
-        return 'Saída permitida em $minutosRestantes minutos';
+        if (minutosRestantes == 0) {
+          return 'Saída permitida agora';
+        }
+        return 'Saída permitida em ${_formatarTempo(minutosRestantes)}';
       } else {
         return 'Saída permitida agora';
       }
