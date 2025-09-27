@@ -313,17 +313,18 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                   itemCount: _dates.length,
                   itemBuilder: (context, index) {
                     final date = _dates[index];
-                    final isSelected =
+
+                    // Verifica se é a data atual (hoje)
+                    final isToday =
                         DateFormat('dd-MM').format(date) ==
-                        DateFormat('dd-MM').format(_selectedDate);
+                        DateFormat('dd-MM').format(DateTime.now());
 
                     return Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 2),
                       child: OutlinedButton(
                         style: OutlinedButton.styleFrom(
-                          backgroundColor: isSelected
-                              ? Colors.teal
-                              : Colors.white,
+                          // Teal apenas para a data atual (hoje), independente da seleção
+                          backgroundColor: isToday ? Colors.teal : Colors.white,
                           side: const BorderSide(color: Colors.teal),
                           shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(8),
@@ -333,7 +334,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                         child: Text(
                           DateFormat('dd-MM').format(date),
                           style: TextStyle(
-                            color: isSelected ? Colors.white : Colors.black87,
+                            color: isToday ? Colors.white : Colors.black87,
                             fontWeight: FontWeight.bold,
                             fontSize: 10,
                           ),
