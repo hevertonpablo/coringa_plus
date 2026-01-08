@@ -89,7 +89,121 @@ flutter pub get
 flutter run
 ```
 
-### 📱 Permissões Necessárias
+### Build de Release (Play Store) com FVM
+
+Para envio na **Google Play Store**, gere o **Android App Bundle (`.aab`)**:
+
+```bash
+fvm flutter clean
+fvm flutter pub get
+fvm flutter build appbundle --release
+```
+
+O arquivo gerado fica em:
+
+```text
+build/app/outputs/bundle/release/app-release.aab
+```
+
+Se você usa **flavors**, exemplo:
+
+```bash
+fvm flutter build appbundle --release --flavor prod -t lib/main_prod.dart
+```
+
+Para gerar **APK** (útil para testes, não recomendado para publicação na Play Store):
+
+```bash
+fvm flutter build apk --release
+```
+
+### Assinatura Android (Keystore) para Release
+
+Para publicar na **Google Play Store**, o app precisa ser gerado em modo **release** e **assinado** com um keystore (normalmente a **upload key**, usando o recurso **Play App Signing** do Google).
+
+Observações sobre o `applicationId`:
+
+- O formato é um identificador no estilo “domínio reverso” (ex.: `com.coringaplus.app`).
+- **Não é obrigatório** terminar com `.br`. O requisito é ser **único** na Play Store e seguir as regras de nome de pacote.
+- Depois de publicar, **evite trocar** o `applicationId`, pois isso cria um “novo app” (não atualiza o antigo).
+
+1. **Gere o keystore (upload key)**
+
+No Windows (com JDK instalado), rode:
+
+```bash
+keytool -genkey -v -keystore android/upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Se o comando `keytool` não for reconhecido, você precisa:
+
+- Instalar um **JDK** e adicionar `%JAVA_HOME%\\bin` no `PATH`, ou
+- Usar o `keytool.exe` que vem com o **Android Studio** (exemplo no PowerShell):
+
+```powershell
+& "<CAMINHO_DO_KEYTOOL>" -genkey -v -storetype JKS -keystore android/upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Exemplos de `<CAMINHO_DO_KEYTOOL>`:
+
+```text
+C:\Program Files\Android\Android Studio\jbr\bin\keytool.exe
+C:\Program Files\Android\Android Studio1\jbr\bin\keytool.exe
+C:\Program Files\Android\jdk\jdk-8.0.302.8-hotspot\jdk8u302-b08\bin\keytool.exe
+```
+
+Importante:
+
+- Execute esse comando **direto no PowerShell** (não prefixe com `powershell ...`).
+- Se você estiver no **CMD**, rode sem o `&`:
+
+```bat
+"<CAMINHO_DO_KEYTOOL>" -genkey -v -storetype JKS -keystore android\upload-keystore.jks -alias upload -keyalg RSA -keysize 2048 -validity 10000
+```
+
+Isso vai criar o arquivo `android/upload-keystore.jks` (não commitar).
+
+Você vai informar:
+
+- **Senha do keystore** (store password)
+- **Senha da chave** (key password)
+- Dados do certificado (CN/OU/O/L/ST/C)
+
+2. **Crie o arquivo `android/key.properties`**
+
+Crie o arquivo `android/key.properties` (não commitar) com o conteúdo:
+
+```properties
+storePassword=SUA_STORE_PASSWORD
+keyPassword=SUA_KEY_PASSWORD
+keyAlias=upload
+storeFile=../upload-keystore.jks
+```
+
+3. **Gere o AAB assinado com FVM**
+
+```bash
+fvm flutter clean
+fvm flutter pub get
+fvm flutter build appbundle --release
+```
+
+Se `android/key.properties` existir e estiver correto, o Gradle vai assinar o build de `release` automaticamente.
+
+4. **Envie para a Play Console**
+
+Faça upload do arquivo:
+
+```text
+build/app/outputs/bundle/release/app-release.aab
+```
+
+Importante:
+
+- **Não perca o keystore e as senhas**. Sem isso você pode perder a capacidade de atualizar o app.
+- **Não commite** `android/key.properties` nem arquivos `.jks` no Git.
+
+### � Permissões Necessárias
 
 O aplicativo requer as seguintes permissões:
 - **Câmera:** Para captura de selfies
