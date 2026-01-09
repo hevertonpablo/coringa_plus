@@ -270,7 +270,14 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                 aspectRatio: 1,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: CameraPreview(_controller),
+                  child: FittedBox(
+                    fit: BoxFit.cover,
+                    child: SizedBox(
+                      width: _controller.value.previewSize!.height,
+                      height: _controller.value.previewSize!.width,
+                      child: CameraPreview(_controller),
+                    ),
+                  ),
                 ),
               ),
               const SizedBox(height: 12),
