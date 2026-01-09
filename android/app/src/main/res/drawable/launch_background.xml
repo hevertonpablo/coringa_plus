@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Splash screen otimizada: apenas cor sólida #0ABAB5 para startup instantâneo -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
-    <item>
-        <bitmap android:gravity="fill" android:src="@drawable/background"/>
-    </item>
-    <item>
-        <bitmap android:gravity="center" android:src="@drawable/splash"/>
+    <item android:drawable="@android:color/white">
+        <shape android:shape="rectangle">
+            <solid android:color="#0ABAB5"/>
+        </shape>
     </item>
 </layer-list>
