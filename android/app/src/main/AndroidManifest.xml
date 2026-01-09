@@ -7,6 +7,17 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
+    <!-- Configuração para restringir a compatibilidade apenas a Smartphones -->
+    <supports-screens
+        android:smallScreens="true"
+        android:normalScreens="true"
+        android:largeScreens="false"
+        android:xlargeScreens="false"
+        android:anyDensity="true" />
+
+    <!-- Exige tela de toque (exclui a maioria dos desktops e TV boxes) -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="true" />
+
     <application
         android:label="coringa_plus"
         android:name="${applicationName}"
@@ -14,6 +25,7 @@
         <activity
             android:name="com.coringaplus.app.MainActivity"
             android:exported="true"
+            android:screenOrientation="portrait"
             android:launchMode="singleTop"
             android:taskAffinity=""
             android:theme="@style/LaunchTheme"

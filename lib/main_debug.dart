@@ -1,10 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'locator.dart';
 import 'pages/auth_screen.dart';
 import 'pages/selfie_debug_screen.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  SystemChrome.setPreferredOrientations([
+    DeviceOrientation.portraitUp,
+  ]);
   setupLocator();
   runApp(const MyApp());
 }
