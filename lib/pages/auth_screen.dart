@@ -1,7 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../controller/login_controller.dart';
 import '../locator.dart'; // para pegar o LoginController via getIt
+import '../services/app_bootstrap_service.dart';
 import 'selfie_capture_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -19,18 +21,70 @@ class _LoginScreenState extends State<LoginScreen> {
 
   List<DropdownMenuItem<String>> perfilItems = [];
   String? selectedPerfil;
-  bool isLoading = true;
+  bool isLoading = false;
 
   @override
   void initState() {
     super.initState();
-    // Pega a instância do controller via getIt
     controller = getIt<LoginController>();
 
     loginController.text = "31103074563";
     senhaController.text = "311030";
 
-    _loadPerfis();
+    // Escuta mudanças no ValueNotifier de perfis
+    AppBootstrapService.instance.perfisNotifier.addListener(_onPerfisLoaded);
+    
+    // Verifica se perfis já foram carregados
+    final cachedPerfis = AppBootstrapService.instance.cachedPerfis;
+    
+    if (cachedPerfis != null && cachedPerfis.isNotEmpty) {
+      // Perfis já estão disponíveis
+      _setPerfisSync(cachedPerfis);
+    } else {
+      // Mostra loading enquanto aguarda
+      setState(() {
+        isLoading = true;
+      });
+      
+      // Fallback: se após 2s ainda não carregou, faz request direto
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted && perfilItems.isEmpty) {
+          _loadPerfis();
+        }
+      });
+    }
+  }
+
+  void _onPerfisLoaded() {
+    final perfis = AppBootstrapService.instance.perfisNotifier.value;
+    if (perfis != null && perfis.isNotEmpty && mounted) {
+      setState(() {
+        _setPerfisSync(perfis);
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    AppBootstrapService.instance.perfisNotifier.removeListener(_onPerfisLoaded);
+    super.dispose();
+  }
+
+  void _setPerfisSync(Map<String, String> perfisMap) {
+    final items = perfisMap.entries
+        .map(
+          (entry) => DropdownMenuItem<String>(
+            value: entry.value,
+            child: Text(entry.key),
+          ),
+        )
+        .toList();
+
+    perfilItems = items;
+    final values = items.map((i) => i.value).whereType<String>().toList();
+    selectedPerfil = values.length == 1 ? values.first : null;
+    // isLoading já é false, não precisa setState aqui
   }
 
   Future<void> _loadPerfis() async {
@@ -40,7 +94,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
     try {
       final perfisMap = await controller.loadPerfis();
-
+      
       final items = perfisMap.entries
           .map(
             (entry) => DropdownMenuItem<String>(
@@ -52,9 +106,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
       setState(() {
         perfilItems = items;
-        // Garante que o valor selecionado seja válido após recarregar os itens.
         final values = items.map((i) => i.value).whereType<String>().toList();
-        // Se houver apenas um perfil disponível, seleciona automaticamente; caso contrário, zera a seleção.
         selectedPerfil = values.length == 1 ? values.first : null;
         isLoading = false;
       });
