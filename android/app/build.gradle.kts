@@ -59,6 +59,11 @@ android {
             } else {
                 signingConfigs.getByName("debug")
             }
+            
+            // Otimizações de Tamanho (R8)
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
 }
