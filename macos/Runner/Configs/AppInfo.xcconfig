@@ -8,7 +8,7 @@
 PRODUCT_NAME = coringa_plus
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.coringaPlus
+PRODUCT_BUNDLE_IDENTIFIER = com.coringaplus.app
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2025 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2025 com.coringaplus. All rights reserved.
