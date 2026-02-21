@@ -47,5 +47,11 @@
 		<true/>
 		<key>UIStatusBarHidden</key>
 		<false/>
+		<key>NSCameraUsageDescription</key>
+		<string>Este app precisa acessar a câmera para registrar o ponto com selfie.</string>
+		<key>NSLocationWhenInUseUsageDescription</key>
+		<string>Este app utiliza sua localização para registrar o ponto de trabalho.</string>
+		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+		<string>Este app utiliza sua localização para registrar o ponto de trabalho.</string>
 	</dict>
 </plist>
