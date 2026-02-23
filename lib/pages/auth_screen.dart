@@ -2,8 +2,10 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../controller/login_controller.dart';
+import '../helper/cpf_formatter.dart';
 import '../locator.dart'; // para pegar o LoginController via getIt
 import '../services/app_bootstrap_service.dart';
+import '../services/auth_service.dart';
 import 'selfie_capture_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,20 +18,18 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   late final LoginController controller;
 
-  final TextEditingController loginController = TextEditingController();
+  final TextEditingController cpfController = TextEditingController();
   final TextEditingController senhaController = TextEditingController();
+  final TextEditingController perfilController = TextEditingController();
 
-  List<DropdownMenuItem<String>> perfilItems = [];
-  String? selectedPerfil;
-  bool isLoading = false;
+  Map<String, String> perfisMap = {};
+  String? selectedPerfilValue;
+  bool isLoadingPerfis = false;
 
   @override
   void initState() {
     super.initState();
     controller = getIt<LoginController>();
-
-    loginController.text = "31103074563";
-    senhaController.text = "311030";
 
     // Escuta mudanças no ValueNotifier de perfis
     AppBootstrapService.instance.perfisNotifier.addListener(_onPerfisLoaded);
@@ -41,95 +41,124 @@ class _LoginScreenState extends State<LoginScreen> {
       // Perfis já estão disponíveis
       _setPerfisSync(cachedPerfis);
     } else {
-      // Mostra loading enquanto aguarda
-      setState(() {
-        isLoading = true;
-      });
-      
       // Fallback: se após 2s ainda não carregou, faz request direto
       Future.delayed(const Duration(seconds: 2), () {
-        if (mounted && perfilItems.isEmpty) {
+        if (mounted && perfisMap.isEmpty) {
           _loadPerfis();
         }
       });
     }
+
+    // Carrega o último perfil selecionado
+    _loadLastSelectedProfile();
   }
 
   void _onPerfisLoaded() {
     final perfis = AppBootstrapService.instance.perfisNotifier.value;
     if (perfis != null && perfis.isNotEmpty && mounted) {
+      _setPerfisSync(perfis);
+    }
+  }
+
+  void _setPerfisSync(Map<String, String> newPerfisMap) {
+    setState(() {
+      perfisMap = newPerfisMap;
+      isLoadingPerfis = false;
+      if (kDebugMode) {
+        print('[LoginScreen] Perfis carregados: ${perfisMap.keys.join(", ")}');
+      }
+    });
+  }
+
+  Future<void> _loadPerfis() async {
+    if (mounted) {
       setState(() {
-        _setPerfisSync(perfis);
-        isLoading = false;
+        isLoadingPerfis = true;
       });
+    }
+
+    try {
+      final loadedPerfisMap = await controller.loadPerfis();
+      if (mounted) {
+        _setPerfisSync(loadedPerfisMap);
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        print('[LoginScreen] Erro ao carregar perfis: $e');
+      }
+      if (mounted) {
+        setState(() {
+          isLoadingPerfis = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadLastSelectedProfile() async {
+    final lastProfile = await AuthService.getLastSelectedProfile();
+    if (lastProfile != null && perfisMap.isNotEmpty && mounted) {
+      // Encontra o nome do perfil pelo valor
+      final profileName = perfisMap.entries
+          .firstWhere(
+            (entry) => entry.value == lastProfile,
+            orElse: () => const MapEntry('', ''),
+          )
+          .key;
+      
+      if (profileName.isNotEmpty) {
+        setState(() {
+          perfilController.text = profileName;
+          selectedPerfilValue = lastProfile;
+        });
+      }
+    }
+  }
+
+  void _selectPerfil(String perfilName, String perfilValue) {
+    setState(() {
+      perfilController.text = perfilName;
+      selectedPerfilValue = perfilValue;
+    });
+    FocusScope.of(context).unfocus(); // Fecha o teclado
+    // Salva a seleção para próximas vezes
+    AuthService.saveLastSelectedProfile(perfilValue);
+    if (kDebugMode) {
+      print('[LoginScreen] Perfil selecionado: $perfilName ($perfilValue)');
     }
   }
 
   @override
   void dispose() {
     AppBootstrapService.instance.perfisNotifier.removeListener(_onPerfisLoaded);
+    cpfController.dispose();
+    senhaController.dispose();
+    perfilController.dispose();
     super.dispose();
   }
 
-  void _setPerfisSync(Map<String, String> perfisMap) {
-    final items = perfisMap.entries
-        .map(
-          (entry) => DropdownMenuItem<String>(
-            value: entry.value,
-            child: Text(entry.key),
-          ),
-        )
-        .toList();
-
-    perfilItems = items;
-    final values = items.map((i) => i.value).whereType<String>().toList();
-    selectedPerfil = values.length == 1 ? values.first : null;
-    // isLoading já é false, não precisa setState aqui
-  }
-
-  Future<void> _loadPerfis() async {
-    setState(() {
-      isLoading = true;
-    });
-
-    try {
-      final perfisMap = await controller.loadPerfis();
-      
-      final items = perfisMap.entries
-          .map(
-            (entry) => DropdownMenuItem<String>(
-              value: entry.value,
-              child: Text(entry.key),
-            ),
-          )
-          .toList();
-
-      setState(() {
-        perfilItems = items;
-        final values = items.map((i) => i.value).whereType<String>().toList();
-        selectedPerfil = values.length == 1 ? values.first : null;
-        isLoading = false;
-      });
-    } catch (e) {     
-      setState(() {
-        isLoading = false;
-      });
-    }
-  }
-
   Future<void> _login() async {
-    final login = loginController.text.trim();
+    final cpf = CpfFormatter.removeFormatting(cpfController.text.trim());
     final senha = senhaController.text.trim();
-    final database = selectedPerfil;
+    final database = selectedPerfilValue;
 
-    if (database == null) {
+    if (cpf.isEmpty) {
+      _showMessage('Por favor, insira seu CPF.');
+      return;
+    }
+
+    if (senha.isEmpty) {
+      _showMessage('Por favor, insira sua senha.');
+      return;
+    }
+
+    if (database == null || database.isEmpty) {
       _showMessage('Selecione um perfil.');
       return;
     }
 
     try {
       final user = await controller.login(
-        login: login,
+        login: cpf,
         senha: senha,
         database: database,
       );
@@ -146,9 +175,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showMessage(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   InputDecoration _inputDecoration(String label) {
@@ -179,35 +208,106 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 150),
                 Image.asset('assets/images/logo.png', height: 60),
                 const SizedBox(height: 32),
+                // Campo de CPF com máscara
                 TextFormField(
-                  controller: loginController,
-                  decoration: _inputDecoration('Matrícula'),
+                  controller: cpfController,
+                  inputFormatters: [CpfFormatter()],
+                  keyboardType: TextInputType.number,
+                  decoration: _inputDecoration('CPF'),
                 ),
                 const SizedBox(height: 16),
+                // Campo de Senha
                 TextFormField(
                   controller: senhaController,
                   obscureText: true,
                   decoration: _inputDecoration('Senha'),
                 ),
                 const SizedBox(height: 16),
-                isLoading
-                    ? const CircularProgressIndicator()
-                    : DropdownButtonFormField<String>(
-                        isExpanded: true,
-                        decoration: _inputDecoration('Selecione o perfil'),
-                        hint: const Text('Selecione o perfil'),
-                        items: perfilItems,
-                        // Evita erro quando o valor atual não existe mais na lista de itens
-                        value: perfilItems.map((e) => e.value).contains(selectedPerfil)
-                            ? selectedPerfil
-                            : null,
-                        onChanged: (value) {
-                          setState(() {
-                            selectedPerfil = value;
-                          });
+                // Campo de Perfil com Autocomplete
+                Autocomplete<String>(
+                  optionsBuilder: (TextEditingValue textEditingValue) {
+                    if (textEditingValue.text.isEmpty || perfisMap.isEmpty) {
+                      return const Iterable<String>.empty();
+                    }
+                    final query = textEditingValue.text.toLowerCase();
+                    return perfisMap.entries
+                        .where((entry) =>
+                            entry.key.toLowerCase().contains(query))
+                        .map((entry) => entry.key)
+                        .toList();
+                  },
+                  onSelected: (String selection) {
+                    final perfilValue =
+                        perfisMap[selection]; // Pega o valor (database ID)
+                    if (perfilValue != null) {
+                      _selectPerfil(selection, perfilValue);
+                    }
+                  },
+                  fieldViewBuilder: (context, textEditingController, focusNode,
+                      onFieldSubmitted) {
+                    // Sincroniza o controller do Autocomplete com o perfilController
+                    perfilController.text = textEditingController.text;
+                    textEditingController.addListener(() {
+                      if (perfilController.text != textEditingController.text) {
+                        perfilController.text = textEditingController.text;
+                      }
+                    });
+
+                    return TextFormField(
+                      controller: textEditingController,
+                      focusNode: focusNode,
+                      decoration: _inputDecoration('Selecione o perfil'),
+                      readOnly: perfisMap.isEmpty && !isLoadingPerfis,
+                      onChanged: (value) {
+                        // Limpar a seleção se o usuário está editando o texto
+                        if (value != perfilController.text) {
+                          selectedPerfilValue = null;
+                        }
+                      },
+                    );
+                  },
+                  optionsViewBuilder: (context, onSelected, options) {
+                    return Material(
+                      elevation: 4,
+                      color: const Color(0xFFEFF2F7),
+                      child: ListView.builder(
+                        padding: EdgeInsets.zero,
+                        shrinkWrap: true,
+                        itemCount: options.length,
+                        itemBuilder: (context, index) {
+                          final optionText = options.elementAt(index);
+                          return ListTile(
+                            title: Text(optionText),
+                            onTap: () {
+                              onSelected(optionText);
+                            },
+                          );
                         },
                       ),
+                    );
+                  },
+                ),
+                // Status de carregamento
+                if (isLoadingPerfis)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 12),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                          ),
+                        ),
+                        SizedBox(width: 8),
+                        Text('Carregando perfis...'),
+                      ],
+                    ),
+                  ),
                 const SizedBox(height: 32),
+                // Botão de Login
                 SizedBox(
                   width: double.infinity,
                   height: 50,

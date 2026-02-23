@@ -7,6 +7,7 @@ import '../model/user_model.dart';
 
 class AuthService {
   static const _userKey = 'user';
+  static const _lastSelectedProfileKey = 'last_selected_profile';
 
   static Future<void> saveUser(UserModel user) async {
     final prefs = await SharedPreferences.getInstance();
@@ -23,5 +24,17 @@ class AuthService {
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);
+  }
+
+  /// Salva o perfil selecionado para recuperação posterior
+  static Future<void> saveLastSelectedProfile(String profileValue) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_lastSelectedProfileKey, profileValue);
+  }
+
+  /// Recupera o último perfil selecionado
+  static Future<String?> getLastSelectedProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_lastSelectedProfileKey);
   }
 }
