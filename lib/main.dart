@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -28,6 +29,9 @@ void main() async {
 
 /// Configurações de UI que não precisam bloquear o startup
 void _setSystemUIOverlays() {
+  if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  }
   SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp,
   ]);
