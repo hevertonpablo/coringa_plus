@@ -254,6 +254,53 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
   }
 
+  /// Verifica se o plantão atual é hoje
+  bool _isPlantaoHoje() {
+    final plantao = _plantaoController.plantaoAtual;
+    if (plantao == null) return false;
+
+    final agora = DateTime.now();
+    final entrada = plantao.dtEntrada;
+
+    return entrada.year == agora.year &&
+        entrada.month == agora.month &&
+        entrada.day == agora.day;
+  }
+
+  /// Retorna o texto do label baseado no status do plantão
+  String _getLabelPlantao() {
+    final plantao = _plantaoController.plantaoAtual;
+    if (plantao == null) return 'Próximo Plantão';
+
+    final isHoje = _isPlantaoHoje();
+    
+    if (isHoje) {
+      // Se é hoje e já foi iniciado
+      if (plantao.dtEntradaPonto != null) {
+        return 'Plantão iniciado';
+      }
+      // Se é hoje e ainda não iniciou
+      return 'Plantão de Hoje';
+    }
+
+    // Se não é hoje
+    return 'Próximo Plantão';
+  }
+
+  /// Retorna o texto do botão baseado no status do plantão
+  String _getTextoBotao() {
+    final plantao = _plantaoController.plantaoAtual;
+    if (plantao == null) return 'ENTRADA';
+
+    // Se já registrou entrada, mostra SAÍDA
+    if (plantao.dtEntradaPonto != null) {
+      return 'SAÍDA';
+    }
+
+    // Se ainda não registrou entrada, mostra ENTRADA
+    return 'ENTRADA';
+  }
+
   Widget _buildSelfiePage() {
     return FutureBuilder(
       future: _initializeControllerFuture,
@@ -289,7 +336,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                 _plantaoController.getEnderecoUnidade() ?? "Endereço",
                 style: const TextStyle(fontSize: 13),
               ),
-              Text("Próximo Plantão", style: const TextStyle(fontSize: 13)),
+              Text(_getLabelPlantao(), style: const TextStyle(fontSize: 13)),
               Text(
                 _plantaoController.getNextPlantao() ??
                     "Nenhum plantão agendado",
@@ -372,9 +419,9 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                             strokeWidth: 2,
                           ),
                         )
-                      : const Text(
-                          "REGISTRAR",
-                          style: TextStyle(fontSize: 16, color: Colors.white),
+                      : Text(
+                          _getTextoBotao(),
+                          style: const TextStyle(fontSize: 16, color: Colors.white),
                         ),
                 ),
               ),
