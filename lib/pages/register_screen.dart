@@ -14,6 +14,8 @@ class PlantoesPage extends StatefulWidget {
 class _PlantoesPageState extends State<PlantoesPage> {
   final PlantaoController _controller = PlantaoController();
   late Future<List<Plantao>> _futurePlantoes;
+  String _nomeUsuario = '';
+  String _cpfUsuario = '';
 
   @override
   void initState() {
@@ -25,7 +27,10 @@ class _PlantoesPageState extends State<PlantoesPage> {
   Future<void> _inicializarController() async {
     await _controller.inicializar();
     if (!mounted) return;
-    setState(() {}); // Atualiza a UI após carregar plantões
+    setState(() {
+      _nomeUsuario = _controller.usuario.nome;
+      _cpfUsuario = _controller.usuario.cpf;
+    }); // Atualiza a UI após carregar plantões
   }
 
   @override
@@ -61,10 +66,11 @@ class _PlantoesPageState extends State<PlantoesPage> {
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 4),
-                  const Text("Dr. Malafaia", style: TextStyle(fontSize: 16)),
-                  const Text(
-                    "099337365335",
-                    style: TextStyle(fontSize: 14, color: Colors.black54),
+                  Text(_nomeUsuario.isNotEmpty ? _nomeUsuario : "Carregando...", 
+                    style: const TextStyle(fontSize: 16)),
+                  Text(
+                    _cpfUsuario.isNotEmpty ? _cpfUsuario : "",
+                    style: const TextStyle(fontSize: 14, color: Colors.black54),
                   ),
                   const SizedBox(height: 30),
 

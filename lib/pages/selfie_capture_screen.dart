@@ -11,6 +11,7 @@ import '../helper/tolerance_validator.dart';
 import '../locator.dart';
 import '../services/auth_service.dart';
 import '../services/registro_service.dart';
+import 'auth_screen.dart';
 import 'historico_registros_screen.dart';
 
 class SelfieCaptureScreen extends StatefulWidget {
@@ -36,6 +37,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   late DateTime _selectedDate;
   bool _isRegistering = false;
   String _statusMessage = '';
+  String _nomeUsuarioLogado = '';
   Timer? _statusTimer;
 
   @override
@@ -45,8 +47,17 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     _initializeControllerFuture = _initCamera();
     _plantaoController = PlantaoController();
     _registroService = getIt<RegistroService>();
+    _loadUsuarioLogado();
     _inicializarController();
     _startStatusTimer();
+  }
+
+  Future<void> _loadUsuarioLogado() async {
+    final user = await AuthService.getUser();
+    if (!mounted || user == null) return;
+    setState(() {
+      _nomeUsuarioLogado = user.nome;
+    });
   }
 
   Future<void> _initCamera() async {
@@ -432,6 +443,36 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
   }
 
+  Future<void> _handleLogout() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Sair'),
+        content: const Text('Deseja realmente fazer logout?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Sair', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar == true && mounted) {
+      await AuthService.logout();
+      if (!mounted) return;
+      // Remove todas as telas anteriores e navega para login
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final pages = [
@@ -441,6 +482,35 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F8FB),
+      appBar: AppBar(
+        title: const Text('Coringa Plus'),
+        backgroundColor: Colors.teal,
+        foregroundColor: Colors.white,
+        automaticallyImplyLeading: false, // Remove botão voltar
+        actions: [
+          if (_nomeUsuarioLogado.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Center(
+                child: SizedBox(
+                  width: 140,
+                  child: Text(
+                    _nomeUsuarioLogado,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              ),
+            ),
+          IconButton(
+            icon: const Icon(Icons.logout),
+            tooltip: 'Sair',
+            onPressed: _handleLogout,
+          ),
+        ],
+      ),
       body: SafeArea(child: pages[_currentIndex]),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,

@@ -24,6 +24,7 @@ class AuthService {
   static Future<void> logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userKey);
+    await prefs.remove(_lastSelectedProfileKey); // Limpa o último perfil selecionado
   }
 
   /// Salva o perfil selecionado para recuperação posterior
