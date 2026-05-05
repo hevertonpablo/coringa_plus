@@ -38,6 +38,7 @@ dependencies:
   intl: ^0.20.2
   http: ^1.4.0
   geolocator: ^14.0.2
+  google_mlkit_face_detection: ^0.13.1
   shared_preferences: ^2.5.3
   get_it: ^8.0.3
 

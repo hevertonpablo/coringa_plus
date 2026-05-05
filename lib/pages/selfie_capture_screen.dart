@@ -1,9 +1,12 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:intl/intl.dart';
 
 import '../controller/plantao_controller.dart';
@@ -29,21 +32,31 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
 
-  final List<DateTime> _dates = List.generate(
-    5,
-    (i) => DateTime.now().subtract(Duration(days: 2 - i)),
-  );
+  final List<DateTime> _dates = [DateTime.now()];
 
   late DateTime _selectedDate;
   bool _isRegistering = false;
   String _statusMessage = '';
   String _nomeUsuarioLogado = '';
+  bool _isProcessingFrame = false;
+  bool _isFaceDetected = false;
+  bool _isFacePositioned = false;
+  String _faceDetectionMessage =
+      'Posicione o rosto dentro do círculo e mantenha o celular estável.';
   Timer? _statusTimer;
+  late final FaceDetector _faceDetector;
 
   @override
   void initState() {
     super.initState();
     _selectedDate = DateTime.now();
+    _faceDetector = FaceDetector(
+      options: FaceDetectorOptions(
+        enableClassification: false,
+        enableContours: false,
+        performanceMode: FaceDetectorMode.fast,
+      ),
+    );
     _initializeControllerFuture = _initCamera();
     _plantaoController = PlantaoController();
     _registroService = getIt<RegistroService>();
@@ -67,6 +80,156 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
     _controller = CameraController(frontCamera, ResolutionPreset.medium);
     await _controller.initialize();
+    await _startFaceDetectionStream();
+  }
+
+  Future<void> _startFaceDetectionStream() async {
+    if (_controller.value.isStreamingImages) return;
+
+    await _controller.startImageStream((CameraImage image) async {
+      if (_isProcessingFrame || _isRegistering) return;
+      await _processCameraImage(image);
+    });
+  }
+
+  Future<void> _stopFaceDetectionStream() async {
+    if (_controller.value.isStreamingImages) {
+      await _controller.stopImageStream();
+    }
+  }
+
+  InputImage? _convertCameraImage(CameraImage image) {
+    final rotation = InputImageRotationValue.fromRawValue(
+          _controller.description.sensorOrientation,
+        ) ??
+        InputImageRotation.rotation0deg;
+
+    if (Platform.isAndroid) {
+      // Android retorna YUV_420_888 (3 planos) — converter para NV21
+      if (image.planes.length < 3) return null;
+      final bytes = _yuv420ToNv21(image);
+      return InputImage.fromBytes(
+        bytes: bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.nv21,
+          bytesPerRow: image.width,
+        ),
+      );
+    } else if (Platform.isIOS) {
+      // iOS retorna BGRA8888 (1 plano)
+      if (image.planes.isEmpty) return null;
+      final plane = image.planes.first;
+      return InputImage.fromBytes(
+        bytes: plane.bytes,
+        metadata: InputImageMetadata(
+          size: Size(image.width.toDouble(), image.height.toDouble()),
+          rotation: rotation,
+          format: InputImageFormat.bgra8888,
+          bytesPerRow: plane.bytesPerRow,
+        ),
+      );
+    }
+    return null;
+  }
+
+  Uint8List _yuv420ToNv21(CameraImage image) {
+    final int width = image.width;
+    final int height = image.height;
+    final Plane yPlane = image.planes[0];
+    final Plane uPlane = image.planes[1];
+    final Plane vPlane = image.planes[2];
+
+    final int ySize = width * height;
+    final Uint8List nv21 = Uint8List(ySize + (width * height) ~/ 2);
+
+    // Copiar plano Y (luminância) respeitando stride de linha
+    for (int row = 0; row < height; row++) {
+      for (int col = 0; col < width; col++) {
+        nv21[row * width + col] =
+            yPlane.bytes[row * yPlane.bytesPerRow + col];
+      }
+    }
+
+    // Intercalar V e U (formato NV21 = Y seguido de VU intercalados)
+    final int uvPixelStride = vPlane.bytesPerPixel ?? 1;
+    final int uvRowStride = vPlane.bytesPerRow;
+    final int uvHeight = height ~/ 2;
+    final int uvWidth = width ~/ 2;
+    for (int row = 0; row < uvHeight; row++) {
+      for (int col = 0; col < uvWidth; col++) {
+        final int uvIndex = ySize + row * width + col * 2;
+        nv21[uvIndex] =
+            vPlane.bytes[row * uvRowStride + col * uvPixelStride];
+        nv21[uvIndex + 1] =
+            uPlane.bytes[row * uPlane.bytesPerRow + col * (uPlane.bytesPerPixel ?? 1)];
+      }
+    }
+
+    return nv21;
+  }
+
+  Future<void> _processCameraImage(CameraImage image) async {
+    _isProcessingFrame = true;
+
+    try {
+      final InputImage? inputImage = _convertCameraImage(image);
+      if (inputImage == null) return;
+
+      final faces = await _faceDetector.processImage(inputImage);
+      final bool hasFace = faces.isNotEmpty;
+      final Size imageSize =
+          Size(image.width.toDouble(), image.height.toDouble());
+      final bool positioned =
+          hasFace &&
+          faces.any((face) => _isFaceInsideGuide(face: face, imageSize: imageSize));
+
+      if (!mounted) return;
+
+      setState(() {
+        _isFaceDetected = hasFace;
+        _isFacePositioned = positioned;
+
+        if (!hasFace) {
+          _faceDetectionMessage =
+              'Nenhum rosto detectado. Posicione o rosto dentro do círculo.';
+        } else if (!positioned) {
+          _faceDetectionMessage =
+              'Rosto detectado. Centralize dentro do círculo para iniciar.';
+        } else {
+          _faceDetectionMessage =
+              'Rosto posicionado. Você já pode iniciar plantão.';
+        }
+      });
+    } catch (_) {
+      // Mantém a experiência estável mesmo se algum frame falhar.
+    } finally {
+      _isProcessingFrame = false;
+    }
+  }
+
+  bool _isFaceInsideGuide({required Face face, required Size imageSize}) {
+    final Rect box = face.boundingBox;
+
+    // A câmera frontal no Android tem sensor rotacionado 270°,
+    // então width/height do frame podem estar invertidos em relação
+    // ao que o usuário vê. Normaliza usando a maior dimensão como altura.
+    final double frameW = math.max(imageSize.width, imageSize.height);
+    final double frameH = math.min(imageSize.width, imageSize.height);
+
+    final double centerX = box.center.dx / frameW;
+    final double centerY = box.center.dy / frameH;
+    final double distanceToCenter = math.sqrt(
+      math.pow(centerX - 0.5, 2) + math.pow(centerY - 0.5, 2),
+    );
+
+    // Rosto precisa ter pelo menos 10% da largura do frame
+    final double widthRatio = box.width / frameW;
+    final bool sizeOk = widthRatio >= 0.10;
+
+    // Aceita rosto dentro de ~38% do centro normalizado
+    return distanceToCenter <= 0.38 && sizeOk;
   }
 
   Future<void> _inicializarController() async {
@@ -151,6 +314,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   @override
   void dispose() {
     _statusTimer?.cancel();
+    _faceDetector.close();
     _controller.dispose();
     super.dispose();
   }
@@ -158,12 +322,22 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   void _captureImage() async {
     if (_isRegistering) return;
 
+    final bool isIniciarPlantao = _getTextoBotao() == 'Iniciar plantão';
+    if (isIniciarPlantao && !_isFacePositioned) {
+      _showMessage(
+        'Posicione o rosto corretamente dentro do círculo para iniciar o plantão.',
+        isError: true,
+      );
+      return;
+    }
+
     setState(() {
       _isRegistering = true;
     });
 
     try {
       await _initializeControllerFuture;
+      await _stopFaceDetectionStream();
 
       final plantao = _plantaoController.plantaoAtual;
       if (plantao == null) {
@@ -249,6 +423,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     } catch (e) {
       _showMessage('Erro: ${e.toString()}', isError: true);
     } finally {
+      await _startFaceDetectionStream();
       setState(() {
         _isRegistering = false;
       });
@@ -330,13 +505,65 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                 aspectRatio: 1,
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: FittedBox(
-                    fit: BoxFit.cover,
-                    child: SizedBox(
-                      width: _controller.value.previewSize!.height,
-                      height: _controller.value.previewSize!.width,
-                      child: CameraPreview(_controller),
-                    ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      FittedBox(
+                        fit: BoxFit.cover,
+                        child: SizedBox(
+                          width: _controller.value.previewSize!.height,
+                          height: _controller.value.previewSize!.width,
+                          child: CameraPreview(_controller),
+                        ),
+                      ),
+                      IgnorePointer(
+                        child: Center(
+                          child: FractionallySizedBox(
+                            widthFactor: 0.68,
+                            heightFactor: 0.68,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: _isFacePositioned
+                                      ? Colors.greenAccent
+                                      : _isFaceDetected
+                                      ? Colors.amberAccent
+                                      : Colors.white,
+                                  width: 3,
+                                ),
+                                boxShadow: const [
+                                  BoxShadow(
+                                    color: Colors.black26,
+                                    blurRadius: 8,
+                                    spreadRadius: 1,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.teal.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.teal.withOpacity(0.35)),
+                ),
+                child: Text(
+                  _faceDetectionMessage,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.teal,
                   ),
                 ),
               ),
@@ -375,40 +602,25 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
               const SizedBox(height: 12),
               SizedBox(
                 height: 45,
-                child: ListView.builder(
-                  scrollDirection: Axis.horizontal,
-                  itemCount: _dates.length,
-                  itemBuilder: (context, index) {
-                    final date = _dates[index];
-
-                    // Verifica se é a data atual (hoje)
-                    final isToday =
-                        DateFormat('dd-MM').format(date) ==
-                        DateFormat('dd-MM').format(DateTime.now());
-
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 2),
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          // Teal apenas para a data atual (hoje), independente da seleção
-                          backgroundColor: isToday ? Colors.teal : Colors.white,
-                          side: const BorderSide(color: Colors.teal),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: () => setState(() => _selectedDate = date),
-                        child: Text(
-                          DateFormat('dd-MM').format(date),
-                          style: TextStyle(
-                            color: isToday ? Colors.white : Colors.black87,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 10,
-                          ),
-                        ),
+                child: Center(
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      backgroundColor: Colors.teal,
+                      side: const BorderSide(color: Colors.teal),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    );
-                  },
+                    ),
+                    onPressed: () {},
+                    child: Text(
+                      DateFormat('dd-MM').format(DateTime.now()),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ),
                 ),
               ),
               const Spacer(),
@@ -422,7 +634,11 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  onPressed: _isRegistering ? null : _captureImage,
+                    onPressed: _isRegistering ||
+                        (_getTextoBotao() == 'Iniciar plantão' &&
+                          !_isFacePositioned)
+                      ? null
+                      : _captureImage,
                   child: _isRegistering
                       ? const SizedBox(
                           width: 20,

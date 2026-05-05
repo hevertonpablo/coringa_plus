@@ -75,7 +75,7 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
     if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto != null) {
       return Colors.green; // Realizado
     } else if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto == null) {
-      return Colors.blue; // Em realização
+      return Colors.blue; // Em andamento
     } else if (plantao.dtSaida.isBefore(agora)) {
       return Colors.red; // Não realizado
     } else {
@@ -89,7 +89,7 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
     if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto != null) {
       return 'Realizado';
     } else if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto == null) {
-      return 'Em Realização';
+      return 'Em andamento';
     } else if (plantao.dtSaida.isBefore(agora)) {
       return 'Não Realizado';
     } else {
