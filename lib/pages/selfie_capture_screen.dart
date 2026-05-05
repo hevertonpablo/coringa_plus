@@ -24,6 +24,116 @@ class SelfieCaptureScreen extends StatefulWidget {
   State<SelfieCaptureScreen> createState() => _SelfieCaptureScreenState();
 }
 
+/// Painter para desenhar ícone de rosto com linhas de scan nos cantos
+class FaceScanIconPainter extends CustomPainter {
+  final Color color;
+
+  FaceScanIconPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 2
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final centerX = size.width / 2;
+    final centerY = size.height / 2;
+    final faceRadius = size.width * 0.28;
+    final cornerLength = size.width * 0.12;
+    final cornerOffset = size.width * 0.35;
+
+    // Desenha o círculo do rosto (contorno)
+    canvas.drawCircle(Offset(centerX, centerY), faceRadius, paint);
+
+    // Desenha os dois olhos (pontos)
+    final eyePaint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    canvas.drawCircle(
+      Offset(centerX - faceRadius * 0.35, centerY - faceRadius * 0.15),
+      2.5,
+      eyePaint,
+    );
+    canvas.drawCircle(
+      Offset(centerX + faceRadius * 0.35, centerY - faceRadius * 0.15),
+      2.5,
+      eyePaint,
+    );
+
+    // Desenha o sorriso (arco)
+    final smilePath = Path()
+      ..moveTo(centerX - faceRadius * 0.3, centerY + faceRadius * 0.15)
+      ..quadraticBezierTo(
+        centerX,
+        centerY + faceRadius * 0.45,
+        centerX + faceRadius * 0.3,
+        centerY + faceRadius * 0.15,
+      );
+    canvas.drawPath(smilePath, paint..strokeWidth = 2);
+
+    // Desenha as linhas dos cantos (scan corners)
+    // Linhas mais grossas para os cantos
+    final cornerPaint = Paint()
+      ..color = color
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    // Canto superior esquerdo
+    canvas.drawLine(
+      Offset(centerX - cornerOffset, centerY - cornerOffset),
+      Offset(centerX - cornerOffset + cornerLength, centerY - cornerOffset),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(centerX - cornerOffset, centerY - cornerOffset),
+      Offset(centerX - cornerOffset, centerY - cornerOffset + cornerLength),
+      cornerPaint,
+    );
+
+    // Canto superior direito
+    canvas.drawLine(
+      Offset(centerX + cornerOffset, centerY - cornerOffset),
+      Offset(centerX + cornerOffset - cornerLength, centerY - cornerOffset),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(centerX + cornerOffset, centerY - cornerOffset),
+      Offset(centerX + cornerOffset, centerY - cornerOffset + cornerLength),
+      cornerPaint,
+    );
+
+    // Canto inferior esquerdo
+    canvas.drawLine(
+      Offset(centerX - cornerOffset, centerY + cornerOffset),
+      Offset(centerX - cornerOffset + cornerLength, centerY + cornerOffset),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(centerX - cornerOffset, centerY + cornerOffset),
+      Offset(centerX - cornerOffset, centerY + cornerOffset - cornerLength),
+      cornerPaint,
+    );
+
+    // Canto inferior direito
+    canvas.drawLine(
+      Offset(centerX + cornerOffset, centerY + cornerOffset),
+      Offset(centerX + cornerOffset - cornerLength, centerY + cornerOffset),
+      cornerPaint,
+    );
+    canvas.drawLine(
+      Offset(centerX + cornerOffset, centerY + cornerOffset),
+      Offset(centerX + cornerOffset, centerY + cornerOffset - cornerLength),
+      cornerPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
 class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   int _currentIndex = 0;
 
@@ -32,9 +142,6 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
 
-  final List<DateTime> _dates = [DateTime.now()];
-
-  late DateTime _selectedDate;
   bool _isRegistering = false;
   String _statusMessage = '';
   String _nomeUsuarioLogado = '';
@@ -49,7 +156,6 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedDate = DateTime.now();
     _faceDetector = FaceDetector(
       options: FaceDetectorOptions(
         enableClassification: false,
@@ -99,7 +205,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   InputImage? _convertCameraImage(CameraImage image) {
-    final rotation = InputImageRotationValue.fromRawValue(
+    final rotation =
+        InputImageRotationValue.fromRawValue(
           _controller.description.sensorOrientation,
         ) ??
         InputImageRotation.rotation0deg;
@@ -147,8 +254,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     // Copiar plano Y (luminância) respeitando stride de linha
     for (int row = 0; row < height; row++) {
       for (int col = 0; col < width; col++) {
-        nv21[row * width + col] =
-            yPlane.bytes[row * yPlane.bytesPerRow + col];
+        nv21[row * width + col] = yPlane.bytes[row * yPlane.bytesPerRow + col];
       }
     }
 
@@ -160,10 +266,10 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     for (int row = 0; row < uvHeight; row++) {
       for (int col = 0; col < uvWidth; col++) {
         final int uvIndex = ySize + row * width + col * 2;
-        nv21[uvIndex] =
-            vPlane.bytes[row * uvRowStride + col * uvPixelStride];
+        nv21[uvIndex] = vPlane.bytes[row * uvRowStride + col * uvPixelStride];
         nv21[uvIndex + 1] =
-            uPlane.bytes[row * uPlane.bytesPerRow + col * (uPlane.bytesPerPixel ?? 1)];
+            uPlane.bytes[row * uPlane.bytesPerRow +
+                col * (uPlane.bytesPerPixel ?? 1)];
       }
     }
 
@@ -179,11 +285,15 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
       final faces = await _faceDetector.processImage(inputImage);
       final bool hasFace = faces.isNotEmpty;
-      final Size imageSize =
-          Size(image.width.toDouble(), image.height.toDouble());
+      final Size imageSize = Size(
+        image.width.toDouble(),
+        image.height.toDouble(),
+      );
       final bool positioned =
           hasFace &&
-          faces.any((face) => _isFaceInsideGuide(face: face, imageSize: imageSize));
+          faces.any(
+            (face) => _isFaceInsideGuide(face: face, imageSize: imageSize),
+          );
 
       if (!mounted) return;
 
@@ -296,18 +406,73 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     });
   }
 
-  Color _getStatusColor() {
+  // Métodos para o badge de status no card da unidade (layout do print)
+  Color _getStatusBadgeColor() {
     if (_statusMessage.contains('permitida agora')) {
-      return Colors.green;
+      return const Color(0xFFE8F5E9); // Verde claro
     } else if (_statusMessage.contains('permitida em')) {
-      return Colors.orange;
+      return const Color(0xFFFFF3E0); // Laranja claro
     } else if (_statusMessage.contains('expirado') ||
         _statusMessage.contains('Fora do')) {
-      return Colors.red;
+      return const Color(0xFFFFEBEE); // Vermelho claro
     } else if (_statusMessage.contains('completamente registrado')) {
-      return Colors.blue;
+      return const Color(0xFFE3F2FD); // Azul claro
     } else {
-      return Colors.grey;
+      return const Color(0xFFF5F5F5); // Cinza claro
+    }
+  }
+
+  Color _getStatusTextColor() {
+    if (_statusMessage.contains('permitida agora')) {
+      return const Color(0xFF2E7D32); // Verde escuro
+    } else if (_statusMessage.contains('permitida em')) {
+      return const Color(0xFFEF6C00); // Laranja escuro
+    } else if (_statusMessage.contains('expirado') ||
+        _statusMessage.contains('Fora do')) {
+      return const Color(0xFFC62828); // Vermelho escuro
+    } else if (_statusMessage.contains('completamente registrado')) {
+      return const Color(0xFF1565C0); // Azul escuro
+    } else {
+      return Colors.grey.shade700;
+    }
+  }
+
+  IconData _getStatusIcon() {
+    if (_statusMessage.contains('permitida agora')) {
+      return Icons.check_circle_outline;
+    } else if (_statusMessage.contains('permitida em')) {
+      return Icons.access_time;
+    } else if (_statusMessage.contains('expirado') ||
+        _statusMessage.contains('Fora do')) {
+      return Icons.cancel_outlined;
+    } else if (_statusMessage.contains('completamente registrado')) {
+      return Icons.task_alt;
+    } else {
+      return Icons.info_outline;
+    }
+  }
+
+  String _getStatusBadgeText() {
+    if (_statusMessage.contains('permitida agora')) {
+      return 'Entrada permitida agora';
+    } else if (_statusMessage.contains('permitida em')) {
+      // Extrair tempo da mensagem se possível
+      final regex = RegExp(r'em (\d+ min)');
+      final match = regex.firstMatch(_statusMessage);
+      if (match != null) {
+        return 'Entrada em ${match.group(1)}';
+      }
+      return 'Entrada em breve';
+    } else if (_statusMessage.contains('Saída permitida')) {
+      return 'Saída permitida';
+    } else if (_statusMessage.contains('expirado')) {
+      return 'Expirado';
+    } else if (_statusMessage.contains('Fora do')) {
+      return 'Fora do horário';
+    } else if (_statusMessage.contains('completamente registrado')) {
+      return 'Plantão finalizado';
+    } else {
+      return _statusMessage;
     }
   }
 
@@ -461,7 +626,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     if (plantao == null) return 'Próximo Plantão';
 
     final isHoje = _isPlantaoHoje();
-    
+
     if (isHoje) {
       // Se é hoje e já foi iniciado
       if (plantao.dtEntradaPonto != null) {
@@ -487,6 +652,39 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
     // Se ainda não registrou entrada, mostra opção de iniciar plantão
     return 'Iniciar plantão';
+  }
+
+  /// Constrói o texto de detecção facial com duas linhas separadas
+  Widget _buildFaceDetectionText() {
+    final parts = _faceDetectionMessage.split('. ');
+    if (parts.length == 1) {
+      return Text(
+        _faceDetectionMessage,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+          color: Colors.teal,
+        ),
+      );
+    }
+    final bold = '${parts.first}.';
+    final rest = parts.sublist(1).join('. ');
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          bold,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: Colors.teal,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(rest, style: TextStyle(fontSize: 11, color: Colors.teal.shade700)),
+      ],
+    );
   }
 
   Widget _buildSelfiePage() {
@@ -516,6 +714,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                           child: CameraPreview(_controller),
                         ),
                       ),
+
                       IgnorePointer(
                         child: Center(
                           child: FractionallySizedBox(
@@ -526,19 +725,12 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: _isFacePositioned
-                                      ? Colors.greenAccent
+                                      ? Colors.green
                                       : _isFaceDetected
-                                      ? Colors.amberAccent
+                                      ? Colors.amber
                                       : Colors.white,
                                   width: 3,
                                 ),
-                                boxShadow: const [
-                                  BoxShadow(
-                                    color: Colors.black26,
-                                    blurRadius: 8,
-                                    spreadRadius: 1,
-                                  ),
-                                ],
                               ),
                             ),
                           ),
@@ -549,94 +741,250 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                 ),
               ),
               const SizedBox(height: 8),
+              // Face detection message with icon - estilo do print
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.teal.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.teal.withOpacity(0.35)),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
                 ),
-                child: Text(
-                  _faceDetectionMessage,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.teal,
-                  ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF5F8FB),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Ícone de rosto com linhas nos cantos
+                    SizedBox(
+                      width: 40,
+                      height: 40,
+                      child: CustomPaint(
+                        painter: FaceScanIconPainter(color: Colors.teal),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(child: _buildFaceDetectionText()),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
-              Text(
-                _plantaoController.getNomeUnidade() ?? "Unidade",
-                style: const TextStyle(fontWeight: FontWeight.bold),
-              ),
-              Text(
-                _plantaoController.getEnderecoUnidade() ?? "Endereço",
-                style: const TextStyle(fontSize: 13),
-              ),
-              Text(_getLabelPlantao(), style: const TextStyle(fontSize: 13)),
-              Text(
-                _plantaoController.getNextPlantao() ??
-                    "Nenhum plantão agendado",
-                style: const TextStyle(fontSize: 13),
-              ),
-              const SizedBox(height: 8),
+              // Unit info card - layout do print
               Container(
-                padding: const EdgeInsets.all(8),
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: _getStatusColor(),
-                  borderRadius: BorderRadius.circular(8),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
                 ),
-                child: Text(
-                  _statusMessage,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                  textAlign: TextAlign.center,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Linha superior: ícone + nome + endereço
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Ícone em container circular com fundo cinza azulado
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE8F4F4),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.monitor_heart,
+                            color: Color(0xFF00897B),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _plantaoController.getNomeUnidade() ??
+                                    'Unidade',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                _plantaoController.getEnderecoUnidade() ??
+                                    'Endereço',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.grey.shade600,
+                                  height: 1.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Divider horizontal
+                    Divider(
+                      height: 20,
+                      thickness: 1,
+                      color: Colors.grey.shade200,
+                    ),
+                    // Linha inferior: plantão/horário + divider + badge de status
+                    Row(
+                      children: [
+                        // Horário do plantão (lado esquerdo)
+                        Expanded(
+                          flex: 2,
+                          child: Row(
+                            children: [
+                              // Ícone de relógio em container circular - verde
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: const Color(
+                                    0xFFE8F4F4,
+                                  ), // Verde bem claro
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(
+                                  Icons.access_time,
+                                  color: Colors.teal,
+                                  size: 16,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _getLabelPlantao(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                    ),
+                                  ),
+                                  Text(
+                                    _plantaoController.getNextPlantao() ??
+                                        '--:--',
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      height: 1.1,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        // Divider vertical entre horário e badge
+                        Container(
+                          width: 1,
+                          height: 32,
+                          color: Colors.grey.shade200,
+                          margin: const EdgeInsets.symmetric(horizontal: 12),
+                        ),
+                        // Badge de status (lado direito)
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getStatusBadgeColor(),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                _getStatusIcon(),
+                                color: _getStatusTextColor(),
+                                size: 14,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _getStatusBadgeText(),
+                                style: TextStyle(
+                                  color: _getStatusTextColor(),
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
               const SizedBox(height: 12),
-              SizedBox(
-                height: 45,
-                child: Center(
-                  child: OutlinedButton(
-                    style: OutlinedButton.styleFrom(
-                      backgroundColor: Colors.teal,
-                      side: const BorderSide(color: Colors.teal),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+              // Data e botão principal - layout do print
+              Row(
+                children: [
+                  // Date chip
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 8,
                     ),
-                    onPressed: () {},
-                    child: Text(
-                      DateFormat('dd-MM').format(DateTime.now()),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 10,
-                      ),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.calendar_today,
+                          color: Colors.teal,
+                          size: 14,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          DateFormat('dd-MM').format(DateTime.now()),
+                          style: TextStyle(
+                            color: Colors.teal,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                ),
+                ],
               ),
-              const Spacer(),
+              const SizedBox(height: 12),
+              // Main action button with lock icon - verde quando habilitado
               SizedBox(
                 width: double.infinity,
-                height: 50,
+                height: 48,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.teal,
+                    disabledBackgroundColor: const Color(0xFFB2DFDB),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
+                    elevation: 0,
                   ),
-                    onPressed: _isRegistering ||
-                        (_getTextoBotao() == 'Iniciar plantão' &&
-                          !_isFacePositioned)
+                  onPressed:
+                      _isRegistering ||
+                          (_getTextoBotao() == 'Iniciar plantão' &&
+                              !_isFacePositioned)
                       ? null
                       : _captureImage,
                   child: _isRegistering
@@ -648,9 +996,24 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                             strokeWidth: 2,
                           ),
                         )
-                      : Text(
-                          _getTextoBotao(),
-                          style: const TextStyle(fontSize: 16, color: Colors.white),
+                      : Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const Icon(
+                              Icons.lock_outline,
+                              color: Colors.white,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              _getTextoBotao(),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
                         ),
                 ),
               ),
@@ -740,7 +1103,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
             label: "Registrar",
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.history),
+            icon: Icon(Icons.timer_outlined),
             label: "Histórico",
           ),
         ],

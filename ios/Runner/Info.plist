@@ -45,12 +45,12 @@
 		<key>UIStatusBarHidden</key>
 		<false/>
 		<key>NSMicrophoneUsageDescription</key>
-		<string>O Coringa Plus não grava áudio. O microfone pode ser solicitado pelo sistema devido ao uso da câmera para registro de ponto.</string>
+		<string>O Coringa Plus não grava áudio. O microfone pode ser solicitado pelo sistema devido ao uso da câmera para registro de presença.</string>
 		<key>NSCameraUsageDescription</key>
-		<string>Utilizamos a câmera para capturar a selfie no registro de ponto.</string>
+		<string>Utilizamos a câmera para capturar a selfie no registro de presença.</string>
 		<key>NSLocationWhenInUseUsageDescription</key>
-		<string>Utilizamos sua localização para validar o registro de ponto.</string>
+		<string>Utilizamos sua localização para validar o registro de presença.</string>
 		<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
-		<string>Utilizamos sua localização para validar o registro de ponto.</string>
+		<string>Utilizamos sua localização para validar o registro de presença.</string>
 	</dict>
 </plist>
