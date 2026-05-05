@@ -18,9 +18,10 @@ class RegistroService {
     required double latitude,
     required File selfieFile,
   }) async {
-    // Converte a imagem para base64
+    // Converte a imagem para base64 com MIME type correto
     final bytes = await selfieFile.readAsBytes();
-    final base64Image = base64Encode(bytes);
+    final mimeType = _getMimeType(selfieFile.path);
+    final base64Image = 'data:$mimeType;base64,${base64Encode(bytes)}';
 
     // Formata a data/hora no formato esperado pela API
     final dataHoraFormatada = 
@@ -42,5 +43,28 @@ class RegistroService {
 
     final response = await http.put('/v1/registro', body);
     return response;
+  }
+
+  /// Detecta o tipo MIME baseado na extensão do arquivo
+  /// Retorna 'image/jpeg' como padrão para câmeras
+  String _getMimeType(String filePath) {
+    final extension = filePath.split('.').last.toLowerCase();
+    
+    switch (extension) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'heic':
+      case 'heif':
+        return 'image/heic'; // iOS pode usar HEIC
+      default:
+        return 'image/jpeg'; // Fallback para JPEG (padrão de câmeras)
+    }
   }
 }

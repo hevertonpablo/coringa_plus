@@ -1,4 +1,5 @@
 import '../controller/location_validator_controller.dart';
+import '../helper/tolerance_validator.dart';
 import '../locator.dart'; // <- para acessar o getIt
 import '../model/plantao_model.dart';
 import '../model/user_model.dart';
@@ -44,14 +45,54 @@ class PlantaoController {
       return aDt.compareTo(bDt);
     });
 
-    // Retorna o primeiro plantão cujo horário de saída ainda não passou
+    final plantoesDisponiveisAgora = plantoes
+        .where((p) => _isPlantaoDisponivelParaRegistroAgora(p, agora))
+        .toList()
+      ..sort((a, b) => b.dtEntrada.compareTo(a.dtEntrada));
+
+    if (plantoesDisponiveisAgora.isNotEmpty) {
+      return plantoesDisponiveisAgora.first;
+    }
+
+    // Se nenhum está disponível agora, retorna o próximo por data de entrada
     for (var p in plantoes) {
-      final saida = p.dtSaida;
-      if (agora.isBefore(saida)) {
+      if (p.dtEntrada.isAfter(agora)) {
         return p;
       }
     }
+
+    // Fallback: retorna o último plantão da lista
+    if (plantoes.isNotEmpty) {
+      return plantoes.last;
+    }
+
     return null;
+  }
+
+  bool _isPlantaoDisponivelParaRegistroAgora(Plantao plantao, DateTime agora) {
+    try {
+      final tipoRegistro = ToleranceValidator.determinarTipoRegistro(
+        dtEntradaPonto: plantao.dtEntradaPonto,
+        dtSaidaPonto: plantao.dtSaidaPonto,
+      );
+
+      if (tipoRegistro == 'E') {
+        return ToleranceValidator.isEntradaPermitida(
+          agora: agora,
+          horarioEntrada: plantao.dtEntrada,
+          toleranciaAntecipada: plantao.toleranciaAntecipada ?? 5,
+          toleranciaAtraso: plantao.toleranciaAtraso ?? 10,
+          permiteRegistroAtraso: plantao.permiteRegistroAtraso,
+        );
+      }
+
+      return ToleranceValidator.isSaidaPermitida(
+        agora: agora,
+        horarioEntradaRegistrada: plantao.dtEntradaPonto,
+      );
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Valida se o usuário está dentro do raio permitido da unidade.

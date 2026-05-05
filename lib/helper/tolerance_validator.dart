@@ -21,15 +21,16 @@ class ToleranceValidator {
     required DateTime horarioEntrada,
     required int toleranciaAntecipada, // em minutos
     required int toleranciaAtraso, // em minutos
+    bool permiteRegistroAtraso = true,
   }) {
     final inicioPermitido = horarioEntrada.subtract(
       Duration(minutes: toleranciaAntecipada),
     );
-    final fimPermitido = horarioEntrada.add(
-      Duration(minutes: toleranciaAtraso),
-    );
+    final fimPermitido = permiteRegistroAtraso
+        ? horarioEntrada.add(Duration(minutes: toleranciaAtraso))
+        : horarioEntrada;
 
-    return agora.isAfter(inicioPermitido) && agora.isBefore(fimPermitido);
+    return !agora.isBefore(inicioPermitido) && !agora.isAfter(fimPermitido);
   }
 
   /// Valida se o horário atual permite saída (deve ser após a entrada registrada)
@@ -69,6 +70,7 @@ class ToleranceValidator {
     required int toleranciaAtraso,
     required DateTime? dtEntradaPonto,
     required DateTime? dtSaidaPonto,
+    bool permiteRegistroAtraso = true,
   }) {
     if (dtEntradaPonto != null && dtSaidaPonto != null) {
       return 'Plantão já foi completamente registrado';
@@ -79,9 +81,9 @@ class ToleranceValidator {
       final inicioPermitido = horarioEntrada.subtract(
         Duration(minutes: toleranciaAntecipada),
       );
-      final fimPermitido = horarioEntrada.add(
-        Duration(minutes: toleranciaAtraso),
-      );
+      final fimPermitido = permiteRegistroAtraso
+          ? horarioEntrada.add(Duration(minutes: toleranciaAtraso))
+          : horarioEntrada;
 
       if (agora.isBefore(inicioPermitido)) {
         final minutosRestantes = inicioPermitido.difference(agora).inMinutes;

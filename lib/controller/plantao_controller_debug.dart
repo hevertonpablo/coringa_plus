@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../helper/tolerance_validator.dart';
 import '../helper/location_validator_debug.dart';
 import '../locator.dart';
 import '../model/plantao_model.dart';
@@ -63,19 +64,62 @@ class PlantaoControllerDebug {
       return aDt.compareTo(bDt);
     });
 
-    // Retorna o primeiro plantão cujo horário de saída ainda não passou
+    final plantoesDisponiveisAgora = plantoes
+        .where((p) => _isPlantaoDisponivelParaRegistroAgora(p, agora))
+        .toList()
+      ..sort((a, b) => b.dtEntrada.compareTo(a.dtEntrada));
+
+    if (plantoesDisponiveisAgora.isNotEmpty) {
+      final selecionado = plantoesDisponiveisAgora.first;
+      debugPrint(
+        '✅ Plantão ${selecionado.plantaoId} selecionado (disponível para registro agora)',
+      );
+      return selecionado;
+    }
+
+    // Se nenhum está disponível agora, retorna o próximo por data de entrada
     for (var p in plantoes) {
-      final saida = p.dtSaida;
-      debugPrint('   Verificando plantão ${p.plantaoId}: saída em $saida');
-      if (agora.isBefore(saida)) {
-        debugPrint(
-          '✅ Plantão ${p.plantaoId} selecionado (saída ainda não passou)',
-        );
+      debugPrint('   Verificando plantão ${p.plantaoId}: entrada em ${p.dtEntrada}');
+      if (p.dtEntrada.isAfter(agora)) {
+        debugPrint('✅ Plantão ${p.plantaoId} selecionado (próximo por entrada)');
         return p;
       }
     }
+
+    if (plantoes.isNotEmpty) {
+      final fallback = plantoes.last;
+      debugPrint('⚠️ Usando fallback: plantão ${fallback.plantaoId}');
+      return fallback;
+    }
+
     debugPrint('❌ Nenhum plantão válido encontrado');
     return null;
+  }
+
+  bool _isPlantaoDisponivelParaRegistroAgora(Plantao plantao, DateTime agora) {
+    try {
+      final tipoRegistro = ToleranceValidator.determinarTipoRegistro(
+        dtEntradaPonto: plantao.dtEntradaPonto,
+        dtSaidaPonto: plantao.dtSaidaPonto,
+      );
+
+      if (tipoRegistro == 'E') {
+        return ToleranceValidator.isEntradaPermitida(
+          agora: agora,
+          horarioEntrada: plantao.dtEntrada,
+          toleranciaAntecipada: plantao.toleranciaAntecipada ?? 5,
+          toleranciaAtraso: plantao.toleranciaAtraso ?? 10,
+          permiteRegistroAtraso: plantao.permiteRegistroAtraso,
+        );
+      }
+
+      return ToleranceValidator.isSaidaPermitida(
+        agora: agora,
+        horarioEntradaRegistrada: plantao.dtEntradaPonto,
+      );
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Valida se o usuário está dentro do raio permitido da unidade COM LOGS DETALHADOS.

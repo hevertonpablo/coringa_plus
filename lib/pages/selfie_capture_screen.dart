@@ -123,6 +123,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       horarioSaida: plantao.dtSaida,
       toleranciaAntecipada: plantao.toleranciaAntecipada ?? 5,
       toleranciaAtraso: plantao.toleranciaAtraso ?? 10,
+      permiteRegistroAtraso: plantao.permiteRegistroAtraso,
       dtEntradaPonto: plantao.dtEntradaPonto,
       dtSaidaPonto: plantao.dtSaidaPonto,
     );
@@ -197,6 +198,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
           horarioEntrada: plantao.dtEntrada,
           toleranciaAntecipada: plantao.toleranciaAntecipada ?? 5,
           toleranciaAtraso: plantao.toleranciaAtraso ?? 10,
+          permiteRegistroAtraso: plantao.permiteRegistroAtraso,
         );
       } else {
         horarioPermitido = ToleranceValidator.isSaidaPermitida(
@@ -301,15 +303,15 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   /// Retorna o texto do botão baseado no status do plantão
   String _getTextoBotao() {
     final plantao = _plantaoController.plantaoAtual;
-    if (plantao == null) return 'ENTRADA';
+    if (plantao == null) return 'Iniciar plantão';
 
-    // Se já registrou entrada, mostra SAÍDA
+    // Se já registrou entrada, mostra opção de finalizar plantão
     if (plantao.dtEntradaPonto != null) {
-      return 'SAÍDA';
+      return 'Finalizar plantão';
     }
 
-    // Se ainda não registrou entrada, mostra ENTRADA
-    return 'ENTRADA';
+    // Se ainda não registrou entrada, mostra opção de iniciar plantão
+    return 'Iniciar plantão';
   }
 
   Widget _buildSelfiePage() {

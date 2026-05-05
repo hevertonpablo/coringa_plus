@@ -58,7 +58,7 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
       case 'nao_realizados':
         return _plantoes.where((p) => 
           p.dtSaida.isBefore(agora) && 
-          (p.dtEntradaPonto == null || p.dtSaidaPonto == null)
+          p.dtEntradaPonto == null
         ).toList();
       case 'futuros':
         return _plantoes.where((p) => 
@@ -74,6 +74,8 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
     
     if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto != null) {
       return Colors.green; // Realizado
+    } else if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto == null) {
+      return Colors.blue; // Em realização
     } else if (plantao.dtSaida.isBefore(agora)) {
       return Colors.red; // Não realizado
     } else {
@@ -86,6 +88,8 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
     
     if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto != null) {
       return 'Realizado';
+    } else if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto == null) {
+      return 'Em Realização';
     } else if (plantao.dtSaida.isBefore(agora)) {
       return 'Não Realizado';
     } else {
@@ -154,7 +158,7 @@ class _HistoricoRegistrosScreenState extends State<HistoricoRegistrosScreen> {
               const SizedBox(height: 8),
               const Divider(),
               const Text(
-                'Registros de Ponto:',
+                'Registro:',
                 style: TextStyle(fontWeight: FontWeight.bold),
               ),
               if (plantao.dtEntradaPonto != null)

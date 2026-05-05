@@ -70,6 +70,7 @@ class _SelfieDebugScreenState extends State<SelfieDebugScreen> {
         horarioSaida: plantao.dtSaida,
         toleranciaAntecipada: plantao.toleranciaAntecipada ?? 5,
         toleranciaAtraso: plantao.toleranciaAtraso ?? 10,
+        permiteRegistroAtraso: plantao.permiteRegistroAtraso,
         dtEntradaPonto: plantao.dtEntradaPonto,
         dtSaidaPonto: plantao.dtSaidaPonto,
       );
