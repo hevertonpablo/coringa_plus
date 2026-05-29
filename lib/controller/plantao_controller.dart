@@ -9,9 +9,23 @@ import '../services/plantao_service.dart';
 class PlantaoController {
   late UserModel _usuario;
   Plantao? _plantaoAtual;
+  List<Plantao> _plantoes = [];
 
   UserModel get usuario => _usuario;
   Plantao? get plantaoAtual => _plantaoAtual;
+  Plantao? get plantaoSeguinte {
+    final atual = _plantaoAtual;
+    if (atual == null) return null;
+
+    for (final plantao in _plantoes) {
+      if (plantao.plantaoId != atual.plantaoId &&
+          plantao.dtEntrada.isAfter(atual.dtEntrada)) {
+        return plantao;
+      }
+    }
+
+    return null;
+  }
 
   Future<List<Plantao>> listarPlantoes() async {
     _usuario = (await AuthService.getUser())!;
@@ -29,6 +43,8 @@ class PlantaoController {
 
     // Busca os plantões do usuário
     final plantoes = await listarPlantoes();
+    plantoes.sort((a, b) => a.dtEntrada.compareTo(b.dtEntrada));
+    _plantoes = List.unmodifiable(plantoes);
 
     // Filtra o próximo plantão com base na data
     _plantaoAtual = _encontrarProximoPlantao(plantoes);
@@ -99,10 +115,24 @@ class PlantaoController {
   Future<bool> validarLocalizacaoUsuario() async {
     if (_plantaoAtual == null) return false;
 
-    final double latitude = double.parse(_plantaoAtual!.unidadeLatitude);
-    final double longitude = double.parse(_plantaoAtual!.unidadeLongitude);
-    final double raio =
-        double.tryParse(_plantaoAtual!.unidadeRaio.toString()) ?? 50;
+    final resultado = await validarLocalizacaoUsuarioDetalhada();
+    return resultado.dentroDoRaio;
+  }
+
+  Future<LocationValidationResult> validarLocalizacaoUsuarioDetalhada() async {
+    if (_plantaoAtual == null) {
+      throw Exception('Nenhum plantao encontrado');
+    }
+
+    final latitude = _parseCoordenada(
+      _plantaoAtual!.unidadeLatitude,
+      nomeCampo: 'latitude da unidade',
+    );
+    final longitude = _parseCoordenada(
+      _plantaoAtual!.unidadeLongitude,
+      nomeCampo: 'longitude da unidade',
+    );
+    final raio = _plantaoAtual!.unidadeRaio.toDouble();
 
     final validador = LocationValidatorController(
       unidadeLatitude: latitude,
@@ -110,7 +140,16 @@ class PlantaoController {
       raioPermitidoEmMetros: raio,
     );
 
-    return await validador.isDentroDoRaio();
+    return await validador.validar();
+  }
+
+  double _parseCoordenada(String value, {required String nomeCampo}) {
+    final parsed = double.tryParse(value.trim().replaceAll(',', '.'));
+    if (parsed == null) {
+      throw Exception('Coordenada invalida para $nomeCampo');
+    }
+
+    return parsed;
   }
 
   /// Retorna o endereço da unidade do plantão atual.

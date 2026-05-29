@@ -5,13 +5,13 @@ import 'dart:typed_data';
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:intl/intl.dart';
 
 import '../controller/plantao_controller.dart';
 import '../helper/tolerance_validator.dart';
 import '../locator.dart';
+import '../model/plantao_model.dart';
 import '../services/auth_service.dart';
 import '../services/registro_service.dart';
 import 'auth_screen.dart';
@@ -205,8 +205,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   InputImage? _convertCameraImage(CameraImage image) {
-    final rotation =
-        InputImageRotationValue.fromRawValue(
+    final rotation = InputImageRotationValue.fromRawValue(
           _controller.description.sensorOrientation,
         ) ??
         InputImageRotation.rotation0deg;
@@ -267,9 +266,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       for (int col = 0; col < uvWidth; col++) {
         final int uvIndex = ySize + row * width + col * 2;
         nv21[uvIndex] = vPlane.bytes[row * uvRowStride + col * uvPixelStride];
-        nv21[uvIndex + 1] =
-            uPlane.bytes[row * uPlane.bytesPerRow +
-                col * (uPlane.bytesPerPixel ?? 1)];
+        nv21[uvIndex + 1] = uPlane.bytes[
+            row * uPlane.bytesPerRow + col * (uPlane.bytesPerPixel ?? 1)];
       }
     }
 
@@ -289,8 +287,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         image.width.toDouble(),
         image.height.toDouble(),
       );
-      final bool positioned =
-          hasFace &&
+      final bool positioned = hasFace &&
           faces.any(
             (face) => _isFaceInsideGuide(face: face, imageSize: imageSize),
           );
@@ -407,8 +404,28 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   // Métodos para o badge de status no card da unidade (layout do print)
+  bool _isPlantaoEmAndamento() {
+    final plantao = _plantaoController.plantaoAtual;
+    return plantao?.dtEntradaPonto != null && plantao?.dtSaidaPonto == null;
+  }
+
+  bool _isPlantaoFuturo() {
+    final plantao = _plantaoController.plantaoAtual;
+    if (plantao == null || plantao.dtEntradaPonto != null) return false;
+
+    return plantao.dtEntrada.isAfter(DateTime.now());
+  }
+
+  bool _isAguardandoPlantaoFuturo() {
+    return _isPlantaoFuturo() && _statusMessage.contains('permitida em');
+  }
+
   Color _getStatusBadgeColor() {
-    if (_statusMessage.contains('permitida agora')) {
+    if (_isPlantaoEmAndamento()) {
+      return const Color(0xFFE8F5E9); // Verde claro
+    } else if (_isAguardandoPlantaoFuturo()) {
+      return const Color(0xFFE0F2F1); // Teal claro
+    } else if (_statusMessage.contains('permitida agora')) {
       return const Color(0xFFE8F5E9); // Verde claro
     } else if (_statusMessage.contains('permitida em')) {
       return const Color(0xFFFFF3E0); // Laranja claro
@@ -423,7 +440,11 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   Color _getStatusTextColor() {
-    if (_statusMessage.contains('permitida agora')) {
+    if (_isPlantaoEmAndamento()) {
+      return const Color(0xFF2E7D32); // Verde escuro
+    } else if (_isAguardandoPlantaoFuturo()) {
+      return const Color(0xFF00796B); // Teal escuro
+    } else if (_statusMessage.contains('permitida agora')) {
       return const Color(0xFF2E7D32); // Verde escuro
     } else if (_statusMessage.contains('permitida em')) {
       return const Color(0xFFEF6C00); // Laranja escuro
@@ -438,7 +459,11 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   IconData _getStatusIcon() {
-    if (_statusMessage.contains('permitida agora')) {
+    if (_isPlantaoEmAndamento()) {
+      return Icons.check_circle_outline;
+    } else if (_isAguardandoPlantaoFuturo()) {
+      return Icons.event_available;
+    } else if (_statusMessage.contains('permitida agora')) {
       return Icons.check_circle_outline;
     } else if (_statusMessage.contains('permitida em')) {
       return Icons.access_time;
@@ -453,11 +478,15 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   String _getStatusBadgeText() {
-    if (_statusMessage.contains('permitida agora')) {
+    if (_isPlantaoEmAndamento()) {
+      return 'Plantão em andamento';
+    } else if (_isAguardandoPlantaoFuturo()) {
+      return 'Próximo plantão';
+    } else if (_statusMessage.contains('permitida agora')) {
       return 'Entrada permitida agora';
     } else if (_statusMessage.contains('permitida em')) {
       // Extrair tempo da mensagem se possível
-      final regex = RegExp(r'em (\d+ min)');
+      final regex = RegExp(r'em (.+)$');
       final match = regex.firstMatch(_statusMessage);
       if (match != null) {
         return 'Entrada em ${match.group(1)}';
@@ -474,6 +503,36 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     } else {
       return _statusMessage;
     }
+  }
+
+  /// Normaliza a exibição do horário para não quebrar layout em telas pequenas.
+  String _getPlantaoPrincipalLabel() {
+    if (_isPlantaoFuturo()) return 'Próximo plantão';
+    return 'Plantão atual';
+  }
+
+  String _getPlantaoSeguinteLabel() {
+    return _isPlantaoFuturo() ? 'Plantão seguinte' : 'Próximo plantão';
+  }
+
+  String _formatHorarioPlantao(Plantao? plantao) {
+    if (plantao == null) return '--:--';
+
+    final entrada = plantao.dtEntrada;
+    final agora = DateTime.now();
+    final hora = DateFormat('HH:mm').format(entrada);
+
+    if (entrada.year == agora.year &&
+        entrada.month == agora.month &&
+        entrada.day == agora.day) {
+      return hora;
+    }
+
+    return '${DateFormat('dd/MM/yyyy').format(entrada)} $hora';
+  }
+
+  String _getHorarioPlantaoDisplay() {
+    return _formatHorarioPlantao(_plantaoController.plantaoAtual);
   }
 
   @override
@@ -511,17 +570,19 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       }
 
       // Validar localização
-      final dentro = await _plantaoController.validarLocalizacaoUsuario();
-      if (!dentro) {
+      final validacaoLocalizacao =
+          await _plantaoController.validarLocalizacaoUsuarioDetalhada();
+      if (!validacaoLocalizacao.dentroDoRaio) {
         _showMessage(
-          'Você está fora do raio permitido da unidade',
+          'Você está fora do raio permitido '
+          '(${validacaoLocalizacao.distanciaEmMetros.toStringAsFixed(0)}m '
+          'de ${validacaoLocalizacao.raioPermitidoEmMetros.toStringAsFixed(0)}m)',
           isError: true,
         );
         return;
       }
 
-      // Obter posição atual
-      final position = await Geolocator.getCurrentPosition();
+      final position = validacaoLocalizacao.posicaoAtual;
 
       // Validar tolerâncias de horário
       final agora = DateTime.now();
@@ -586,7 +647,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         _showMessage('Erro ao registrar ponto', isError: true);
       }
     } catch (e) {
-      _showMessage('Erro: ${e.toString()}', isError: true);
+      final mensagem = e.toString().replaceFirst('Exception: ', '');
+      _showMessage('Erro: $mensagem', isError: true);
     } finally {
       await _startFaceDetectionStream();
       setState(() {
@@ -607,39 +669,6 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
   }
 
-  /// Verifica se o plantão atual é hoje
-  bool _isPlantaoHoje() {
-    final plantao = _plantaoController.plantaoAtual;
-    if (plantao == null) return false;
-
-    final agora = DateTime.now();
-    final entrada = plantao.dtEntrada;
-
-    return entrada.year == agora.year &&
-        entrada.month == agora.month &&
-        entrada.day == agora.day;
-  }
-
-  /// Retorna o texto do label baseado no status do plantão
-  String _getLabelPlantao() {
-    final plantao = _plantaoController.plantaoAtual;
-    if (plantao == null) return 'Próximo Plantão';
-
-    final isHoje = _isPlantaoHoje();
-
-    if (isHoje) {
-      // Se é hoje e já foi iniciado
-      if (plantao.dtEntradaPonto != null) {
-        return 'Plantão iniciado';
-      }
-      // Se é hoje e ainda não iniciou
-      return 'Plantão de Hoje';
-    }
-
-    // Se não é hoje
-    return 'Próximo Plantão';
-  }
-
   /// Retorna o texto do botão baseado no status do plantão
   String _getTextoBotao() {
     final plantao = _plantaoController.plantaoAtual;
@@ -652,6 +681,46 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
     // Se ainda não registrou entrada, mostra opção de iniciar plantão
     return 'Iniciar plantão';
+  }
+
+  /// Retorna o texto de entrada registrada com hora
+  String _getEntradaRegistradaText() {
+    final plantao = _plantaoController.plantaoAtual;
+    if (plantao?.dtEntradaPonto == null) return 'Entrada ainda não registrada';
+
+    final hora = DateFormat('HH:mm').format(plantao!.dtEntradaPonto!);
+    return 'Entrada registrada às $hora';
+  }
+
+  /// Retorna data + hora do próximo plantão (apenas HH:mm se for hoje)
+  String _getProximoPlantaoDisplay() {
+    return _formatHorarioPlantao(_plantaoController.plantaoSeguinte);
+  }
+
+  /// Retorna quantos dias faltam para o próximo plantão
+  String _getProximoPlantaoDiasText() {
+    final proximo = _plantaoController.plantaoSeguinte;
+    if (proximo == null) return '';
+
+    final hoje = DateTime.now();
+    final hojeDia = DateTime(hoje.year, hoje.month, hoje.day);
+    final proximoDia = DateTime(
+      proximo.dtEntrada.year,
+      proximo.dtEntrada.month,
+      proximo.dtEntrada.day,
+    );
+
+    final diffDays = proximoDia.difference(hojeDia).inDays;
+
+    if (diffDays == 0) {
+      return 'Hoje';
+    } else if (diffDays == 1) {
+      return 'Em 1 dia';
+    } else if (diffDays > 1) {
+      return 'Em $diffDays dias';
+    } else {
+      return '';
+    }
   }
 
   /// Constrói o texto de detecção facial com duas linhas separadas
@@ -695,329 +764,362 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
           return const Center(child: CircularProgressIndicator());
         }
 
-        return Padding(
-          padding: const EdgeInsets.all(15),
-          child: Column(
-            children: [
-              AspectRatio(
-                aspectRatio: 1,
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      FittedBox(
-                        fit: BoxFit.cover,
-                        child: SizedBox(
-                          width: _controller.value.previewSize!.height,
-                          height: _controller.value.previewSize!.width,
-                          child: CameraPreview(_controller),
-                        ),
-                      ),
-
-                      IgnorePointer(
-                        child: Center(
-                          child: FractionallySizedBox(
-                            widthFactor: 0.68,
-                            heightFactor: 0.68,
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                border: Border.all(
-                                  color: _isFacePositioned
-                                      ? Colors.green
-                                      : _isFaceDetected
-                                      ? Colors.amber
-                                      : Colors.white,
-                                  width: 3,
+        return LayoutBuilder(
+          builder: (context, constraints) => SingleChildScrollView(
+            padding: const EdgeInsets.all(15),
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: constraints.maxHeight),
+              child: Column(
+                children: [
+                  AspectRatio(
+                    aspectRatio: 1,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: _controller.value.previewSize!.height,
+                              height: _controller.value.previewSize!.width,
+                              child: CameraPreview(_controller),
+                            ),
+                          ),
+                          IgnorePointer(
+                            child: Center(
+                              child: FractionallySizedBox(
+                                widthFactor: 0.68,
+                                heightFactor: 0.68,
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: _isFacePositioned
+                                          ? Colors.green
+                                          : _isFaceDetected
+                                              ? Colors.amber
+                                              : Colors.white,
+                                      width: 3,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              // Face detection message with icon - estilo do print
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 12,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF5F8FB),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Ícone de rosto com linhas nos cantos
-                    SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: CustomPaint(
-                        painter: FaceScanIconPainter(color: Colors.teal),
-                      ),
+                  const SizedBox(height: 8),
+                  // Face detection message with icon - estilo do print
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 12,
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(child: _buildFaceDetectionText()),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Unit info card - layout do print
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF5F8FB),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Linha superior: ícone + nome + endereço
-                    Row(
+                    child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Ícone em container circular com fundo cinza azulado
-                        Container(
-                          width: 44,
-                          height: 44,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE8F4F4),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.monitor_heart,
-                            color: Color(0xFF00897B),
-                            size: 24,
+                        // Ícone de rosto com linhas nos cantos
+                        SizedBox(
+                          width: 40,
+                          height: 40,
+                          child: CustomPaint(
+                            painter: FaceScanIconPainter(color: Colors.teal),
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                _plantaoController.getNomeUnidade() ??
-                                    'Unidade',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 15,
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                _plantaoController.getEnderecoUnidade() ??
-                                    'Endereço',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  color: Colors.grey.shade600,
-                                  height: 1.2,
-                                ),
-                              ),
-                            ],
-                          ),
+                        Expanded(child: _buildFaceDetectionText()),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Unit info card - novo layout
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.05),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
                         ),
                       ],
                     ),
-                    // Divider horizontal
-                    Divider(
-                      height: 20,
-                      thickness: 1,
-                      color: Colors.grey.shade200,
-                    ),
-                    // Linha inferior: plantão/horário + divider + badge de status
-                    Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Horário do plantão (lado esquerdo)
-                        Expanded(
-                          flex: 2,
-                          child: Row(
-                            children: [
-                              // Ícone de relógio em container circular - verde
-                              Container(
-                                width: 32,
-                                height: 32,
-                                decoration: BoxDecoration(
-                                  color: const Color(
-                                    0xFFE8F4F4,
-                                  ), // Verde bem claro
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Icon(
-                                  Icons.access_time,
-                                  color: Colors.teal,
-                                  size: 16,
-                                ),
+                        // Linha superior: ícone + nome + endereço
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFE8F4F4),
+                                shape: BoxShape.circle,
                               ),
-                              const SizedBox(width: 10),
-                              Column(
+                              child: const Icon(
+                                Icons.monitor_heart,
+                                color: Color(0xFF00897B),
+                                size: 20,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    _getLabelPlantao(),
+                                    _plantaoController.getNomeUnidade() ??
+                                        'Unidade',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    _plantaoController.getEnderecoUnidade() ??
+                                        'Endereço',
                                     style: TextStyle(
                                       fontSize: 10,
                                       color: Colors.grey.shade600,
-                                    ),
-                                  ),
-                                  Text(
-                                    _plantaoController.getNextPlantao() ??
-                                        '--:--',
-                                    style: const TextStyle(
-                                      fontSize: 20,
-                                      fontWeight: FontWeight.bold,
-                                      height: 1.1,
+                                      height: 1.2,
                                     ),
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
-                        // Divider vertical entre horário e badge
+                        const SizedBox(height: 12),
+                        // Badge de status do plantão
                         Container(
-                          width: 1,
-                          height: 32,
-                          color: Colors.grey.shade200,
-                          margin: const EdgeInsets.symmetric(horizontal: 12),
-                        ),
-                        // Badge de status (lado direito)
-                        Container(
+                          width: double.infinity,
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
-                            vertical: 6,
+                            vertical: 8,
                           ),
                           decoration: BoxDecoration(
                             color: _getStatusBadgeColor(),
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(
                                 _getStatusIcon(),
                                 color: _getStatusTextColor(),
-                                size: 14,
+                                size: 18,
                               ),
-                              const SizedBox(width: 6),
-                              Text(
-                                _getStatusBadgeText(),
-                                style: TextStyle(
-                                  color: _getStatusTextColor(),
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _getStatusBadgeText(),
+                                  style: TextStyle(
+                                    color: _getStatusTextColor(),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              // Data e botão principal - layout do print
-              Row(
-                children: [
-                  // Date chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 8,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          Icons.calendar_today,
-                          color: Colors.teal,
-                          size: 14,
-                        ),
-                        const SizedBox(width: 6),
-                        Text(
-                          DateFormat('dd-MM').format(DateTime.now()),
-                          style: TextStyle(
-                            color: Colors.teal,
-                            fontWeight: FontWeight.w500,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-              // Main action button with lock icon - verde quando habilitado
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.teal,
-                    disabledBackgroundColor: const Color(0xFFB2DFDB),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    elevation: 0,
-                  ),
-                  onPressed:
-                      _isRegistering ||
-                          (_getTextoBotao() == 'Iniciar plantão' &&
-                              !_isFacePositioned)
-                      ? null
-                      : _captureImage,
-                  child: _isRegistering
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            color: Colors.white,
-                            strokeWidth: 2,
-                          ),
-                        )
-                      : Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        const SizedBox(height: 12),
+                        // Dois blocos: Plantão atual e Próximo plantão
+                        Row(
                           children: [
-                            const Icon(
-                              Icons.lock_outline,
-                              color: Colors.white,
-                              size: 18,
+                            // Bloco esquerdo: Plantão atual
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _getPlantaoPrincipalLabel(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today,
+                                        color: Colors.teal,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          _getHorarioPlantaoDisplay(),
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 8,
+                                      vertical: 5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFE8F5E9),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.check_circle,
+                                          color: Color(0xFF2E7D32),
+                                          size: 14,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Expanded(
+                                          child: Text(
+                                            _getEntradaRegistradaText(),
+                                            style: const TextStyle(
+                                              color: Color(0xFF2E7D32),
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              _getTextoBotao(),
-                              style: const TextStyle(
-                                fontSize: 15,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
+                            const SizedBox(width: 12),
+                            // Bloco direito: Próximo plantão
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    _getPlantaoSeguinteLabel(),
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade600,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.calendar_today,
+                                        color: Colors.grey.shade400,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Expanded(
+                                        child: Text(
+                                          _getProximoPlantaoDisplay(),
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _getProximoPlantaoDiasText(),
+                                    style: TextStyle(
+                                      color: Colors.grey.shade600,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
-                ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  // Main action button with lock icon - verde quando habilitado
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.teal,
+                        disabledBackgroundColor: const Color(0xFFB2DFDB),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        elevation: 0,
+                      ),
+                      onPressed: _isRegistering ||
+                              (_getTextoBotao() == 'Iniciar plantão' &&
+                                  !_isFacePositioned)
+                          ? null
+                          : _captureImage,
+                      child: _isRegistering
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                color: Colors.white,
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.lock_outline,
+                                  color: Colors.white,
+                                  size: 18,
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  _getTextoBotao(),
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         );
       },

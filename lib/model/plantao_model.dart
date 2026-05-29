@@ -47,7 +47,7 @@ class Plantao {
       unidade: json['unidade'],
       unidadeLongitude: json['unidade_longitude'],
       unidadeLatitude: json['unidade_latitude'],
-      unidadeRaio: json['unidade_raio'],
+      unidadeRaio: _parseInt(json['unidade_raio'], fallback: 50),
       unidadeEndereco: json['unidade_endereco'],
       nome: json['nome'],
       nomeSocial: json['nome_social'],
@@ -78,6 +78,15 @@ class Plantao {
 
     final normalizado = value.toString().trim().toUpperCase();
     return normalizado == 'S' || normalizado == '1' || normalizado == 'TRUE';
+  }
+
+  static int _parseInt(dynamic value, {required int fallback}) {
+    if (value == null) return fallback;
+    if (value is int) return value;
+    if (value is num) return value.round();
+
+    final normalizado = value.toString().trim().replaceAll(',', '.');
+    return double.tryParse(normalizado)?.round() ?? fallback;
   }
 
   Map<String, dynamic> toJson() {
