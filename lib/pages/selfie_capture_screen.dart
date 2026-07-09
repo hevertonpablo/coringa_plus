@@ -14,11 +14,11 @@ import '../locator.dart';
 import '../model/plantao_model.dart';
 import '../services/auth_service.dart';
 import '../services/registro_service.dart';
-import 'auth_screen.dart';
-import 'historico_registros_screen.dart';
 
 class SelfieCaptureScreen extends StatefulWidget {
-  const SelfieCaptureScreen({super.key});
+  final Plantao? plantaoSelecionado;
+
+  const SelfieCaptureScreen({super.key, this.plantaoSelecionado});
 
   @override
   State<SelfieCaptureScreen> createState() => _SelfieCaptureScreenState();
@@ -135,8 +135,6 @@ class FaceScanIconPainter extends CustomPainter {
 }
 
 class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
-  int _currentIndex = 0;
-
   late final PlantaoController _plantaoController;
   late final RegistroService _registroService;
   late CameraController _controller;
@@ -144,7 +142,6 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
   bool _isRegistering = false;
   String _statusMessage = '';
-  String _nomeUsuarioLogado = '';
   bool _isProcessingFrame = false;
   bool _isFaceDetected = false;
   bool _isFacePositioned = false;
@@ -166,17 +163,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     _initializeControllerFuture = _initCamera();
     _plantaoController = PlantaoController();
     _registroService = getIt<RegistroService>();
-    _loadUsuarioLogado();
     _inicializarController();
     _startStatusTimer();
-  }
-
-  Future<void> _loadUsuarioLogado() async {
-    final user = await AuthService.getUser();
-    if (!mounted || user == null) return;
-    setState(() {
-      _nomeUsuarioLogado = user.nome;
-    });
   }
 
   Future<void> _initCamera() async {
@@ -340,7 +328,9 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   Future<void> _inicializarController() async {
-    await _plantaoController.inicializar();
+    await _plantaoController.inicializar(
+      plantaoSelecionado: widget.plantaoSelecionado,
+    );
     if (!mounted) return;
     _updateStatusMessage();
     setState(() {}); // Atualiza a UI após carregar plantões
@@ -638,7 +628,27 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
 
       if (response['status'] == 'success') {
         final tipoTexto = tipoRegistro == 'E' ? 'Entrada' : 'Saída';
-        _showMessage('$tipoTexto registrada com sucesso!', isError: false);
+        final proximoPlantao = tipoRegistro == 'S'
+            ? PlantaoController.encontrarProximoPlantaoElegivelParaInicio(
+                _plantaoController.plantoes,
+                plantaoFinalizado: plantao,
+                agora: agora,
+              )
+            : null;
+
+        if (proximoPlantao != null) {
+          _showMessage('$tipoTexto registrada com sucesso!', isError: false);
+          await _oferecerInicioProximoPlantao(
+            proximoPlantao: proximoPlantao,
+            dataHora: agora,
+            database: user.database,
+            longitude: position.longitude,
+            latitude: position.latitude,
+            selfieFile: File(image.path),
+          );
+        } else {
+          _showMessage('$tipoTexto registrada com sucesso!', isError: false);
+        }
 
         // Recarregar plantões para atualizar status
         await _plantaoController.inicializar();
@@ -657,6 +667,81 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     }
   }
 
+  Future<void> _oferecerInicioProximoPlantao({
+    required Plantao proximoPlantao,
+    required DateTime dataHora,
+    required String database,
+    required double longitude,
+    required double latitude,
+    required File selfieFile,
+  }) async {
+    if (!mounted) return;
+
+    debugPrint(
+      'Plantao consecutivo elegivel encontrado: ${proximoPlantao.plantaoId}',
+    );
+
+    final iniciarProximo = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Novo plantão disponível'),
+        content: const Text(
+          'Plantão finalizado. Identificamos que você possui um novo '
+          'plantão iniciando agora. Deseja iniciar esse novo plantão?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Agora não'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Iniciar'),
+          ),
+        ],
+      ),
+    );
+
+    if (iniciarProximo != true) {
+      debugPrint(
+        'Usuario recusou iniciar o plantao consecutivo '
+        '${proximoPlantao.plantaoId}.',
+      );
+      return;
+    }
+
+    try {
+      final response = await _registroService.registrarPonto(
+        plantaoId: proximoPlantao.plantaoId,
+        dataHora: dataHora,
+        tipo: 'E',
+        database: database,
+        longitude: longitude,
+        latitude: latitude,
+        selfieFile: selfieFile,
+      );
+
+      if (response['status'] == 'success') {
+        _showMessage(
+          'Plantão anterior finalizado e novo plantão iniciado com sucesso!',
+          isError: false,
+        );
+      } else {
+        _showMessage(
+          'Plantão anterior finalizado, mas não foi possível iniciar o próximo.',
+          isError: true,
+        );
+      }
+    } catch (e) {
+      final mensagem = e.toString().replaceFirst('Exception: ', '');
+      _showMessage(
+        'Plantão anterior finalizado, mas falhou ao iniciar o próximo: '
+        '$mensagem',
+        isError: true,
+      );
+    }
+  }
+
   void _showMessage(String message, {required bool isError}) {
     if (!mounted) return;
 
@@ -669,18 +754,28 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
   }
 
-  /// Retorna o texto do botão baseado no status do plantão
+  /// Retorna o texto do botao baseado no status do plantao
   String _getTextoBotao() {
     final plantao = _plantaoController.plantaoAtual;
-    if (plantao == null) return 'Iniciar plantão';
+    if (plantao == null) return 'Nenhum plantão';
 
-    // Se já registrou entrada, mostra opção de finalizar plantão
-    if (plantao.dtEntradaPonto != null) {
+    if (PlantaoController.isPlantaoAberto(plantao)) {
       return 'Finalizar plantão';
     }
 
-    // Se ainda não registrou entrada, mostra opção de iniciar plantão
+    if (plantao.dtEntradaPonto != null && plantao.dtSaidaPonto != null) {
+      return 'Plantão finalizado';
+    }
+
     return 'Iniciar plantão';
+  }
+
+  bool _podeRegistrarPlantaoAtual() {
+    final plantao = _plantaoController.plantaoAtual;
+    if (plantao == null) return false;
+
+    return PlantaoController.isPlantaoAberto(plantao) ||
+        PlantaoController.isPlantaoPendente(plantao);
   }
 
   /// Retorna o texto de entrada registrada com hora
@@ -1083,6 +1178,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                         elevation: 0,
                       ),
                       onPressed: _isRegistering ||
+                              !_podeRegistrarPlantaoAtual() ||
                               (_getTextoBotao() == 'Iniciar plantão' &&
                                   !_isFacePositioned)
                           ? null
@@ -1126,90 +1222,16 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
   }
 
-  Future<void> _handleLogout() async {
-    final confirmar = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Sair'),
-        content: const Text('Deseja realmente fazer logout?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sair', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmar == true && mounted) {
-      await AuthService.logout();
-      if (!mounted) return;
-      // Remove todas as telas anteriores e navega para login
-      Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
-        (route) => false,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final pages = [
-      _buildSelfiePage(),
-      const HistoricoRegistrosScreen(), // ← Tela de histórico
-    ];
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F8FB),
       appBar: AppBar(
-        title: const Text('Coringa Plus'),
+        title: const Text('Registrar Plantão'),
         backgroundColor: Colors.teal,
         foregroundColor: Colors.white,
-        automaticallyImplyLeading: false, // Remove botão voltar
-        actions: [
-          if (_nomeUsuarioLogado.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(right: 8),
-              child: Center(
-                child: SizedBox(
-                  width: 140,
-                  child: Text(
-                    _nomeUsuarioLogado,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-            ),
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Sair',
-            onPressed: _handleLogout,
-          ),
-        ],
       ),
-      body: SafeArea(child: pages[_currentIndex]),
-      bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
-        selectedItemColor: Colors.teal,
-        onTap: (index) => setState(() => _currentIndex = index),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.camera_alt),
-            label: "Registrar",
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.timer_outlined),
-            label: "Histórico",
-          ),
-        ],
-      ),
+      body: SafeArea(child: _buildSelfiePage()),
     );
   }
 }

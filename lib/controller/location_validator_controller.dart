@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:geolocator/geolocator.dart';
 
 class LocationValidationResult {
@@ -53,12 +55,7 @@ class LocationValidatorController {
       );
     }
 
-    final posicaoAtual = await Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(
-        accuracy: LocationAccuracy.high,
-        timeLimit: Duration(seconds: 15),
-      ),
-    );
+    final posicaoAtual = await _obterPosicaoAtual();
 
     final distancia = Geolocator.distanceBetween(
       unidadeLatitude,
@@ -73,5 +70,34 @@ class LocationValidatorController {
       distanciaEmMetros: distancia,
       raioPermitidoEmMetros: raioPermitidoEmMetros,
     );
+  }
+
+  Future<Position> _obterPosicaoAtual() async {
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 30),
+        ),
+      );
+    } on TimeoutException {
+      final ultimaPosicao = await Geolocator.getLastKnownPosition();
+      if (_isPosicaoRecente(ultimaPosicao)) {
+        return ultimaPosicao!;
+      }
+
+      throw Exception(
+        'Nao foi possivel obter sua localizacao em tempo habil. '
+        'Ative a localizacao precisa, verifique o sinal de GPS e tente novamente',
+      );
+    }
+  }
+
+  bool _isPosicaoRecente(Position? posicao) {
+    if (posicao == null) return false;
+
+    final timestamp = posicao.timestamp;
+    final idade = DateTime.now().difference(timestamp);
+    return idade <= const Duration(minutes: 5);
   }
 }

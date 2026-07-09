@@ -6,7 +6,7 @@ import '../helper/cpf_formatter.dart';
 import '../locator.dart'; // para pegar o LoginController via getIt
 import '../services/app_bootstrap_service.dart';
 import '../services/auth_service.dart';
-import 'selfie_capture_screen.dart';
+import 'meus_plantoes_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -167,7 +167,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const SelfieCaptureScreen()),
+        MaterialPageRoute(builder: (_) => const MeusPlantoesScreen()),
       );
     } catch (e) {
       _showMessage(e.toString().replaceAll('Exception: ', ''));
