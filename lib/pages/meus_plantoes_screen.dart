@@ -17,7 +17,10 @@ class MeusPlantoesScreen extends StatefulWidget {
 class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
   late final PlantaoController _plantaoController;
   List<Plantao> _plantoes = [];
+  List<Plantao> _historico = [];
   bool _isLoading = true;
+  bool _isLoadingHistorico = false;
+  bool _historicoCarregado = false;
   String _nomeUsuarioLogado = '';
   String _abaSelecionada = 'hoje'; // hoje, proximos, historico
 
@@ -59,6 +62,45 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
         SnackBar(content: Text('Erro ao carregar plantões: $e')),
       );
     }
+  }
+
+  Future<void> _carregarHistorico() async {
+    setState(() {
+      _isLoadingHistorico = true;
+    });
+
+    try {
+      final historico = await _plantaoController.listarHistoricoPlantoes()
+        ..sort((a, b) => b.dtEntrada.compareTo(a.dtEntrada));
+      if (!mounted) return;
+      setState(() {
+        _historico = historico;
+        _historicoCarregado = true;
+        _isLoadingHistorico = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoadingHistorico = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao carregar histórico: $e')),
+      );
+    }
+  }
+
+  void _selecionarAba(String aba) {
+    setState(() => _abaSelecionada = aba);
+    if (aba == 'historico' && !_historicoCarregado) {
+      _carregarHistorico();
+    }
+  }
+
+  Future<void> _refresh() async {
+    await Future.wait([
+      _carregarPlantoes(),
+      if (_abaSelecionada == 'historico') _carregarHistorico(),
+    ]);
   }
 
   Future<void> _handleLogout() async {
@@ -191,8 +233,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
             .where((p) => p.dtEntrada.isAfter(agora))
             .toList();
       case 'historico':
-        return _plantoes.where((p) => p.dtSaida.isBefore(agora)).toList()
-          ..sort((a, b) => b.dtEntrada.compareTo(a.dtEntrada));
+        return _historico;
       case 'hoje':
       default:
         final hoje = DateTime(agora.year, agora.month, agora.day);
@@ -249,7 +290,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Atualizar',
-            onPressed: _carregarPlantoes,
+            onPressed: _refresh,
           ),
           IconButton(
             icon: const CircleAvatar(
@@ -266,7 +307,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : RefreshIndicator(
-              onRefresh: _carregarPlantoes,
+              onRefresh: _refresh,
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 24),
                 children: [
@@ -320,7 +361,12 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  if (plantoesDaAba.isEmpty)
+                  if (_abaSelecionada == 'historico' && _isLoadingHistorico)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 48),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (plantoesDaAba.isEmpty)
                     _buildEmptyState()
                   else
                     ...plantoesDaAba.map((p) => _buildPlantaoCard(p)),
@@ -349,7 +395,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
           final selecionada = _abaSelecionada == aba.$1;
           return Expanded(
             child: GestureDetector(
-              onTap: () => setState(() => _abaSelecionada = aba.$1),
+              onTap: () => _selecionarAba(aba.$1),
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 10),
                 decoration: BoxDecoration(

@@ -40,6 +40,16 @@ class PlantaoController {
     return plantoes;
   }
 
+  Future<List<Plantao>> listarHistoricoPlantoes() async {
+    _usuario = (await AuthService.getUser())!;
+    final plantaoService = getIt<PlantaoService>();
+    final historico = await plantaoService.buscarHistoricoPlantoes(
+      _usuario.id,
+      int.parse(_usuario.database),
+    );
+    return historico;
+  }
+
   /// Inicializa o controller buscando o usuario e seu plantao prioritario.
   ///
   /// Se [plantaoSelecionado] for informado, ele é usado como plantao atual

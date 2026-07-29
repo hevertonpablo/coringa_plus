@@ -14,4 +14,13 @@ class PlantaoService {
 
     return plantaoList.map((item) => Plantao.fromJson(item)).toList();
   }
+
+  Future<List<Plantao>> buscarHistoricoPlantoes(int userId, int baseId) async {
+    final endpoint = '/v1/plantoesHistorico/$userId/$baseId';
+
+    final response = await http.get(endpoint);
+    final List<dynamic> plantaoList = response['data'];
+
+    return plantaoList.map((item) => Plantao.fromJson(item)).toList();
+  }
 }

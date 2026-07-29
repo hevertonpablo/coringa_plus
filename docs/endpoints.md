@@ -170,6 +170,50 @@ Response:
 ```
 
 
+### GET /v1/plantoesHistorico/{userId}/{baseId}
+- Esse endpoint retorna o histórico de plantões do usuário em uma determinada base de dados, usado na aba "Histórico" do app.
+
+URL: https://app.coringaplus.com/v1/plantoesHistorico/{userId}/{baseId}
+Método: GET
+Autenticação: Obrigatória
+Header:
+    Authorization: Basic <token>
+
+#### Parâmetros de Rota
+
+userId: ID do usuário (médico/profissional).
+baseId: ID da base de dados (empresa), obtido via /v1/dbase.
+
+```json
+{
+    "status": "success",
+    "data": [
+        {
+            "plantao_id": 6263,
+            "data_plantao": "2026-05-29",
+            "unidade": "UPA ",
+            "unidade_longitude": "-42.85180283821939",
+            "unidade_latitude": "-22.73270661803669",
+            "unidade_raio": 500,
+            "tolerancia_antecipada_entrada": 30,
+            "tolerancia_atraso_entrada": 999,
+            "unidade_endereco": "Avenida Carlos Lacerda,1433   - Areal - Itaboraí - RJ",
+            "nome": "USUÁRIO TESTE - NÃO ALTERAR",
+            "nome_social": null,
+            "especialidade": "Clínica médica",
+            "setor": "UPA",
+            "horas_plantao": 12,
+            "turno": "Dia",
+            "dt_entrada": "2026-05-29 15:00:00",
+            "dt_saida": "2026-05-29 19:00:00",
+            "dt_entrada_ponto": "2026-05-29 16:38:00",
+            "dt_saida_ponto": "2026-05-29 16:44:00",
+            "permite_registro_atraso": "S"
+        }
+    ]
+}
+```
+
 ## PUT /v1/registro
 - Esse endpoint é responsável pelo registro de ponto dos profissionais, tanto na entrada quanto na saída do plantão.
 - O registro é validado com base na geolocalização do usuário em relação à unidade hospitalar, respeitando as regras de tolerância de entrada/saída.
