@@ -226,10 +226,10 @@ class _LoginScreenState extends State<LoginScreen> {
                 // Campo de Perfil com Autocomplete
                 Autocomplete<String>(
                   optionsBuilder: (TextEditingValue textEditingValue) {
-                    if (textEditingValue.text.isEmpty || perfisMap.isEmpty) {
+                    final query = textEditingValue.text.trim().toLowerCase();
+                    if (query.isEmpty || perfisMap.isEmpty) {
                       return const Iterable<String>.empty();
                     }
-                    final query = textEditingValue.text.toLowerCase();
                     return perfisMap.entries
                         .where((entry) =>
                             entry.key.toLowerCase().contains(query))

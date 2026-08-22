@@ -175,6 +175,7 @@ class PlantaoController {
       unidadeLatitude: latitude,
       unidadeLongitude: longitude,
       raioPermitidoEmMetros: raio,
+      unidadeNome: _plantaoAtual!.unidade,
     );
 
     return await validador.validar();

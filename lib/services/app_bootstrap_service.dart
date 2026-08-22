@@ -5,6 +5,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../locator.dart';
 import '../controller/login_controller.dart';
+import '../services/auth_service.dart';
+import '../services/crash_reporting_service.dart';
 
 /// Serviço centralizado para gerenciar inicialização do app
 /// Separa startup crítico de não-crítico para otimizar Time to First Frame
@@ -79,8 +81,14 @@ class AppBootstrapService {
   }
 
   Future<void> _checkSession() async {
-    await Future.delayed(const Duration(milliseconds: 150)); // Simula verificação
-    // TODO: Verificar token, sessão, usuário logado, etc
+    // Restaura o identificador do Crashlytics se já houver sessão salva.
+    final user = await AuthService.getUser();
+    if (user != null) {
+      await CrashReportingService.instance.setUser(
+        user.id.toString(),
+        nome: user.nome,
+      );
+    }
   }
 
   Future<void> _loadConfiguration() async {

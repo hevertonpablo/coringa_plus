@@ -41,6 +41,8 @@ dependencies:
   google_mlkit_face_detection: ^0.13.1
   shared_preferences: ^2.5.3
   get_it: ^8.0.3
+  firebase_core: ^4.13.0
+  firebase_crashlytics: ^5.2.7
 
 dev_dependencies:
   flutter_test:

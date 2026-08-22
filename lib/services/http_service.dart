@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../interfaces/http_interfaces.dart';
+import 'crash_reporting_service.dart';
 
 class HttpService implements IHttpService {
   final String baseUrl;
@@ -15,50 +16,87 @@ class HttpService implements IHttpService {
       };
 
   @override
-  Future<dynamic> get(String endpoint) async {
-    final url = Uri.parse('$baseUrl$endpoint');
-
-    final response = await http.get(url, headers: defaultHeaders);
-
-    if (response.statusCode == 200) {
-      
-      return json.decode(response.body);
-    } else {
-      throw Exception('Erro ${response.statusCode}: ${response.reasonPhrase}');
-    }
+  Future<dynamic> get(String endpoint) {
+    return _send(
+      method: 'GET',
+      endpoint: endpoint,
+      request: () => http.get(Uri.parse('$baseUrl$endpoint'), headers: defaultHeaders),
+      isSuccess: (statusCode) => statusCode == 200,
+    );
   }
 
   @override
-  Future<dynamic> post(String endpoint, Map<String, dynamic> body) async {
-    final url = Uri.parse('$baseUrl$endpoint');
-
-    final response = await http.post(
-      url,
-      headers: defaultHeaders,
-      body: json.encode(body),
+  Future<dynamic> post(String endpoint, Map<String, dynamic> body) {
+    return _send(
+      method: 'POST',
+      endpoint: endpoint,
+      request: () => http.post(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: defaultHeaders,
+        body: json.encode(body),
+      ),
+      isSuccess: (statusCode) => statusCode >= 200 && statusCode < 300,
     );
-
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return json.decode(response.body);
-    } else {
-      throw Exception('Erro ${response.statusCode}: ${response.reasonPhrase}');
-    }
   }
 
   @override
-  Future<dynamic> put(String endpoint, Map<String, dynamic> body) async {
-    final url = Uri.parse('$baseUrl$endpoint');
-
-    final response = await http.put(
-      url,
-      headers: defaultHeaders,
-      body: json.encode(body),
+  Future<dynamic> put(String endpoint, Map<String, dynamic> body) {
+    return _send(
+      method: 'PUT',
+      endpoint: endpoint,
+      request: () => http.put(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: defaultHeaders,
+        body: json.encode(body),
+      ),
+      isSuccess: (statusCode) => statusCode >= 200 && statusCode < 300,
     );
+  }
 
-    if (response.statusCode >= 200 && response.statusCode < 300) {
-      return json.decode(response.body);
-    } else {
+  /// Executa a requisição e reporta ao Crashlytics qualquer falha vinda da
+  /// API externa (sem resposta, status de erro ou corpo inesperado), já
+  /// que essa API não pode ser monitorada diretamente.
+  Future<dynamic> _send({
+    required String method,
+    required String endpoint,
+    required Future<http.Response> Function() request,
+    required bool Function(int statusCode) isSuccess,
+  }) async {
+    final http.Response response;
+    try {
+      response = await request();
+    } catch (error, stackTrace) {
+      await CrashReportingService.instance.recordApiError(
+        method: method,
+        endpoint: endpoint,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
+    }
+
+    if (!isSuccess(response.statusCode)) {
+      await CrashReportingService.instance.recordApiError(
+        method: method,
+        endpoint: endpoint,
+        statusCode: response.statusCode,
+        responseBody: response.body,
+      );
       throw Exception('Erro ${response.statusCode}: ${response.reasonPhrase}');
+    }
+
+    try {
+      return json.decode(response.body);
+    } catch (error, stackTrace) {
+      await CrashReportingService.instance.recordApiError(
+        method: method,
+        endpoint: endpoint,
+        statusCode: response.statusCode,
+        responseBody: response.body,
+        error: error,
+        stackTrace: stackTrace,
+      );
+      rethrow;
     }
   }
 }
