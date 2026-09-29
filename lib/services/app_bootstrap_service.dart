@@ -7,6 +7,8 @@ import '../locator.dart';
 import '../controller/login_controller.dart';
 import '../services/auth_service.dart';
 import '../services/crash_reporting_service.dart';
+import '../services/offline_cache_service.dart';
+import '../services/sync_manager.dart';
 
 /// Serviço centralizado para gerenciar inicialização do app
 /// Separa startup crítico de não-crítico para otimizar Time to First Frame
@@ -48,6 +50,9 @@ class AppBootstrapService {
     if (_isInitialized) return;
 
     try {
+      _notifyProgress(InitializationStep.loadingCache);
+      await OfflineCacheService.instance.init();
+
       _notifyProgress(InitializationStep.loadingPreferences);
       await _loadPreferences();
 
@@ -62,6 +67,10 @@ class AppBootstrapService {
 
       _notifyProgress(InitializationStep.completed);
       _isInitialized = true;
+
+      // Fire-and-forget: tenta sincronizar registros de ponto capturados
+      // offline (não bloqueia o startup nem falha a inicialização).
+      unawaited(SyncManager.shared.syncPendingRegistros());
 
       if (kDebugMode) {
         print('[Bootstrap] Inicialização não-crítica concluída');
@@ -137,6 +146,7 @@ class AppBootstrapService {
 }
 
 enum InitializationStep {
+  loadingCache('Preparando armazenamento local...'),
   loadingPreferences('Carregando preferências...'),
   loadingSession('Verificando sessão...'),
   loadingPerfis('Carregando perfis...'),

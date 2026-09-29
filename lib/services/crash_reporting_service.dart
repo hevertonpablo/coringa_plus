@@ -91,6 +91,7 @@ class CrashReportingService {
     required double longitude,
     required double distanciaEmMetros,
     required double raioPermitidoEmMetros,
+    required double accuracyEmMetros,
   }) {
     final reason =
         'Fora do raio permitido'
@@ -112,6 +113,34 @@ class CrashReportingService {
         'longitude: $longitude',
         'distanciaEmMetros: ${distanciaEmMetros.toStringAsFixed(1)}',
         'raioPermitidoEmMetros: ${raioPermitidoEmMetros.toStringAsFixed(1)}',
+        'accuracyEmMetros: ${accuracyEmMetros.toStringAsFixed(1)}',
+      ],
+    );
+  }
+
+  /// Reporta como evento não-fatal uma tentativa de registro com localização
+  /// falsa (app de GPS mock), bloqueada antes mesmo de calcular a distância.
+  Future<void> recordMockLocationDetected({
+    required String? unidade,
+    required double latitude,
+    required double longitude,
+  }) {
+    final reason =
+        'Localização falsa detectada'
+        '${unidade != null ? ' ($unidade)' : ''}';
+
+    debugPrint('[Crashlytics] $reason');
+
+    return FirebaseCrashlytics.instance.recordError(
+      Exception(reason),
+      StackTrace.current,
+      reason: reason,
+      fatal: false,
+      information: [
+        if (_usuarioInfo != null) 'usuario: $_usuarioInfo',
+        if (unidade != null) 'unidade: $unidade',
+        'latitude: $latitude',
+        'longitude: $longitude',
       ],
     );
   }
@@ -137,6 +166,33 @@ class CrashReportingService {
         if (_usuarioInfo != null) 'usuario: $_usuarioInfo',
         if (unidade != null) 'unidade: $unidade',
         ...tentativas,
+      ],
+    );
+  }
+
+  /// Reporta como evento não-fatal a falha em sincronizar um registro de
+  /// ponto capturado offline (fila do [SyncManager]), para acompanhar
+  /// quantos registros ficam presos e por quê.
+  Future<void> recordSyncFailure({
+    required String pendingRegistroId,
+    required int plantaoId,
+    required int attempts,
+    Object? error,
+  }) {
+    final reason = 'Falha ao sincronizar registro offline (plantao $plantaoId)';
+
+    debugPrint('[Crashlytics] $reason: $error');
+
+    return FirebaseCrashlytics.instance.recordError(
+      error ?? Exception(reason),
+      StackTrace.current,
+      reason: reason,
+      fatal: false,
+      information: [
+        if (_usuarioInfo != null) 'usuario: $_usuarioInfo',
+        'pendingRegistroId: $pendingRegistroId',
+        'plantaoId: $plantaoId',
+        'attempts: $attempts',
       ],
     );
   }

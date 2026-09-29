@@ -1,10 +1,17 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import '../controller/plantao_controller.dart';
+import '../locator.dart';
 import '../model/plantao_model.dart';
 import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
+import '../services/pending_registro_queue.dart';
+import '../services/sync_manager.dart';
 import 'auth_screen.dart';
+import 'pending_registros_screen.dart';
 import 'selfie_capture_screen.dart';
 
 class MeusPlantoesScreen extends StatefulWidget {
@@ -14,7 +21,8 @@ class MeusPlantoesScreen extends StatefulWidget {
   State<MeusPlantoesScreen> createState() => _MeusPlantoesScreenState();
 }
 
-class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
+class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
+    with WidgetsBindingObserver {
   late final PlantaoController _plantaoController;
   List<Plantao> _plantoes = [];
   List<Plantao> _historico = [];
@@ -23,13 +31,56 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
   bool _historicoCarregado = false;
   String _nomeUsuarioLogado = '';
   String _abaSelecionada = 'hoje'; // hoje, proximos, historico
+  bool _dadosDesatualizados = false;
+  DateTime? _dadosAtualizadosEm;
+  int _pendentesCount = 0;
+  StreamSubscription<bool>? _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _plantaoController = PlantaoController();
     _loadUsuarioLogado();
     _carregarPlantoes();
+    _atualizarContagemPendentes();
+    _dispararSincronizacao();
+    _connectivitySubscription = getIt<ConnectivityService>()
+        .onConnectivityChanged
+        .listen((online) {
+      if (online) _dispararSincronizacao();
+    });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _connectivitySubscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _dispararSincronizacao();
+    }
+  }
+
+  Future<void> _dispararSincronizacao() async {
+    await SyncManager.shared.syncPendingRegistros();
+    await _atualizarContagemPendentes();
+  }
+
+  Future<void> _atualizarContagemPendentes() async {
+    final user = await AuthService.getUser();
+    if (!mounted || user == null) return;
+    final count = getIt<PendingRegistroQueue>().countPending(
+      database: user.database,
+      userId: user.id,
+    );
+    setState(() {
+      _pendentesCount = count;
+    });
   }
 
   Future<void> _loadUsuarioLogado() async {
@@ -52,6 +103,8 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
       setState(() {
         _plantoes = plantoes;
         _isLoading = false;
+        _dadosDesatualizados = _plantaoController.isUltimaListaDoCache;
+        _dadosAtualizadosEm = _plantaoController.ultimaListaCacheadaEm;
       });
     } catch (e) {
       if (!mounted) return;
@@ -140,6 +193,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
     );
     if (!mounted) return;
     _carregarPlantoes();
+    _atualizarContagemPendentes();
   }
 
   bool _isRealizado(Plantao p) =>
@@ -288,6 +342,23 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
         ),
         actions: [
           IconButton(
+            icon: Badge(
+              label: Text('$_pendentesCount'),
+              isLabelVisible: _pendentesCount > 0,
+              child: const Icon(Icons.cloud_upload_outlined),
+            ),
+            tooltip: 'Registros pendentes de sincronização',
+            onPressed: () async {
+              await Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PendingRegistrosScreen(),
+                ),
+              );
+              if (!mounted) return;
+              _atualizarContagemPendentes();
+            },
+          ),
+          IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: 'Atualizar',
             onPressed: _refresh,
@@ -311,6 +382,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 24),
                 children: [
+                  if (_dadosDesatualizados) _buildBannerDesatualizado(),
                   if (emAndamento != null)
                     _buildDestaqueCard(
                       plantao: emAndamento,
@@ -373,6 +445,40 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildBannerDesatualizado() {
+    final atualizadoEm = _dadosAtualizadosEm;
+    final horario = atualizadoEm != null
+        ? DateFormat('dd/MM HH:mm').format(atualizadoEm)
+        : null;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3E0),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.cloud_off, size: 18, color: Color(0xFFEF6C00)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              horario != null
+                  ? 'Sem conexão — mostrando dados de $horario'
+                  : 'Sem conexão — mostrando os últimos dados salvos',
+              style: const TextStyle(
+                fontSize: 12,
+                color: Color(0xFFEF6C00),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
