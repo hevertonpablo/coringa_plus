@@ -37,8 +37,12 @@ class RegistroService {
       'dataHora': dataHoraFormatada,
       'tipo': tipo,
       'database': database,
-      if (longitude != null) 'longitude': longitude.toString(),
-      if (latitude != null) 'latitude': latitude.toString(),
+      // ⚠️ Plantões offline não têm GPS — a API não documenta o formato
+      // esperado quando não há localização, então mandamos string vazia
+      // em vez de omitir os campos (um 404 foi observado com os campos
+      // ausentes; a ser confirmado com o backend qual formato é o certo).
+      'longitude': longitude?.toString() ?? '',
+      'latitude': latitude?.toString() ?? '',
       'selfie': base64Image,
       // ⚠️ Preparado no cliente para permitir dedupe no backend em
       // retentativas (ex. resposta perdida após o servidor já ter
