@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
+
 import '../interfaces/http_interfaces.dart';
 import '../model/plantao_model.dart';
+import 'crash_reporting_service.dart';
 import 'http_exceptions.dart';
 
 class PlantaoService {
@@ -32,6 +35,27 @@ class PlantaoService {
     }
 
     final List<dynamic> plantaoList = response['data'] ?? [];
-    return plantaoList.map((item) => Plantao.fromJson(item)).toList();
+    final plantoes = <Plantao>[];
+
+    // Um único registro malformado (campo nulo/inesperado) não pode
+    // derrubar a lista inteira nem a revalidação de autorização
+    // (`PlantaoRepository.revalidarAutorizacao` depende desta chamada) —
+    // pula o item com problema e segue com os demais.
+    for (final item in plantaoList) {
+      try {
+        plantoes.add(Plantao.fromJson(item));
+      } catch (error, stackTrace) {
+        if (kDebugMode) {
+          print('[PlantaoService] Item de plantão inválido em $endpoint: $error');
+        }
+        CrashReportingService.instance.recordError(
+          error,
+          stackTrace,
+          reason: 'Item de plantão inválido em $endpoint',
+        );
+      }
+    }
+
+    return plantoes;
   }
 }

@@ -1,4 +1,5 @@
 import '../model/plantao_model.dart';
+import '../services/crash_reporting_service.dart';
 import '../services/http_exceptions.dart';
 import '../services/local_profile_registry.dart';
 import '../services/offline_cache_service.dart';
@@ -89,9 +90,18 @@ class PlantaoRepository {
   ///
   /// ⚠️ PREMISSA não confirmada pelo backend: assume que uma rejeição de
   /// acesso vem como HTTP não-2xx OU HTTP 200 com `status` de erro no
-  /// corpo (ver `PlantaoService._parsePlantoes`). Um erro inesperado
-  /// (parsing etc.) é tratado como `offline`, para não travar o perfil por
-  /// um bug transitório.
+  /// corpo (ver `PlantaoService._parsePlantoes`).
+  ///
+  /// Um erro inesperado (parsing etc.) só pode acontecer *depois* de uma
+  /// resposta HTTP válida ter sido obtida — `HttpService` já classifica
+  /// toda falha de transporte como `NetworkUnavailableException` e toda
+  /// resposta não-2xx como `ApiRejectedException` antes de chegar aqui.
+  /// Ou seja, um erro nesse ponto prova que o dispositivo está online e o
+  /// acesso é válido (só a nossa leitura do corpo falhou) — por isso é
+  /// tratado como `authorized` (autoriza a sincronização), não como
+  /// `offline`, para não bloquear indefinidamente o envio de registros
+  /// pendentes por causa de um bug de parsing nosso e não de fato de
+  /// acesso revogado. Reportado ao Crashlytics para investigação.
   Future<RevalidationOutcome> revalidarAutorizacao({
     required int userId,
     required String database,
@@ -114,8 +124,13 @@ class PlantaoRepository {
     } on ApiRejectedException {
       await LocalProfileRegistry.instance.markRevoked(scopeKey);
       return RevalidationOutcome.revoked;
-    } catch (_) {
-      return RevalidationOutcome.offline;
+    } catch (error, stackTrace) {
+      await CrashReportingService.instance.recordError(
+        error,
+        stackTrace,
+        reason: 'Erro inesperado ao revalidar autorização (scopeKey=$scopeKey)',
+      );
+      return RevalidationOutcome.authorized;
     }
   }
 }
