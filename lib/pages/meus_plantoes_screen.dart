@@ -12,6 +12,7 @@ import '../services/pending_registro_queue.dart';
 import '../services/sync_manager.dart';
 import 'auth_screen.dart';
 import 'pending_registros_screen.dart';
+import 'profile_selection_screen.dart';
 import 'selfie_capture_screen.dart';
 
 class MeusPlantoesScreen extends StatefulWidget {
@@ -33,6 +34,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
   String _abaSelecionada = 'hoje'; // hoje, proximos, historico
   bool _dadosDesatualizados = false;
   DateTime? _dadosAtualizadosEm;
+  bool _acessoRevogado = false;
   int _pendentesCount = 0;
   StreamSubscription<bool>? _connectivitySubscription;
 
@@ -105,6 +107,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
         _isLoading = false;
         _dadosDesatualizados = _plantaoController.isUltimaListaDoCache;
         _dadosAtualizadosEm = _plantaoController.ultimaListaCacheadaEm;
+        _acessoRevogado = _plantaoController.isPerfilRevogado;
       });
     } catch (e) {
       if (!mounted) return;
@@ -178,8 +181,12 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
     if (confirmar == true && mounted) {
       await AuthService.logout();
       if (!mounted) return;
+      final destino = await AuthService.hasPreparedProfiles()
+          ? const ProfileSelectionScreen()
+          : const LoginScreen();
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(builder: (_) => destino),
         (route) => false,
       );
     }
@@ -382,7 +389,10 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 24),
                 children: [
-                  if (_dadosDesatualizados) _buildBannerDesatualizado(),
+                  if (_acessoRevogado)
+                    _buildBannerRevogado()
+                  else if (_dadosDesatualizados)
+                    _buildBannerDesatualizado(),
                   if (emAndamento != null)
                     _buildDestaqueCard(
                       plantao: emAndamento,
@@ -445,6 +455,33 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildBannerRevogado() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.block, size: 18, color: Color(0xFFC62828)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Seu acesso a esta base foi revogado. Fale com o suporte.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFFC62828),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 

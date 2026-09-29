@@ -15,6 +15,7 @@ class PlantaoController {
   List<Plantao> _plantoes = [];
   bool _isUltimaListaDoCache = false;
   DateTime? _ultimaListaCacheadaEm;
+  bool _isPerfilRevogado = false;
 
   UserModel get usuario => _usuario;
   Plantao? get plantaoAtual => _plantaoAtual;
@@ -24,6 +25,10 @@ class PlantaoController {
   /// conseguiu falar com a API e serviu a lista cacheada localmente (Hive).
   bool get isUltimaListaDoCache => _isUltimaListaDoCache;
   DateTime? get ultimaListaCacheadaEm => _ultimaListaCacheadaEm;
+
+  /// `true` quando o servidor respondeu explicitamente rejeitando o acesso
+  /// do perfil ativo a esta base (diferente de estar offline).
+  bool get isPerfilRevogado => _isPerfilRevogado;
   Plantao? get plantaoSeguinte {
     final atual = _plantaoAtual;
     if (atual == null) return null;
@@ -48,6 +53,7 @@ class PlantaoController {
     );
     _isUltimaListaDoCache = resultado.isFromCache;
     _ultimaListaCacheadaEm = resultado.cachedAt;
+    _isPerfilRevogado = resultado.isRevoked;
     return resultado.plantoes;
   }
 

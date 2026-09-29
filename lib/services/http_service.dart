@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../interfaces/http_interfaces.dart';
 import 'crash_reporting_service.dart';
+import 'http_exceptions.dart';
 
 class HttpService implements IHttpService {
   final String baseUrl;
@@ -72,7 +73,9 @@ class HttpService implements IHttpService {
         error: error,
         stackTrace: stackTrace,
       );
-      rethrow;
+      // Nenhuma resposta chegou: por definição, é falha de transporte
+      // (sem sinal/timeout/DNS), nunca uma rejeição do servidor.
+      throw NetworkUnavailableException(error);
     }
 
     if (!isSuccess(response.statusCode)) {
@@ -82,7 +85,7 @@ class HttpService implements IHttpService {
         statusCode: response.statusCode,
         responseBody: response.body,
       );
-      throw Exception('Erro ${response.statusCode}: ${response.reasonPhrase}');
+      throw ApiRejectedException(response.statusCode, response.body);
     }
 
     try {

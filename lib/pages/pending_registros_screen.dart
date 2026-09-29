@@ -23,6 +23,7 @@ class _PendingRegistrosScreenState extends State<PendingRegistrosScreen> {
   List<PendingRegistro> _registros = [];
   bool _isLoading = true;
   bool _isSyncing = false;
+  bool _perfilRevogado = false;
 
   @override
   void initState() {
@@ -33,17 +34,21 @@ class _PendingRegistrosScreenState extends State<PendingRegistrosScreen> {
   Future<void> _carregar() async {
     setState(() => _isLoading = true);
     final user = await AuthService.getUser();
+    final perfilAtivo = await AuthService.getActiveProfile();
     if (!mounted) return;
     setState(() {
       _registros = user == null
           ? []
           : (_queue.pendingFor(database: user.database, userId: user.id)
               ..sort((a, b) => b.createdAt.compareTo(a.createdAt)));
+      _perfilRevogado =
+          perfilAtivo?.effectiveStatus(DateTime.now()) == 'revoked';
       _isLoading = false;
     });
   }
 
   Future<void> _sincronizarAgora() async {
+    if (_perfilRevogado) return;
     setState(() => _isSyncing = true);
     try {
       await SyncManager.shared.syncPendingRegistros();
@@ -56,6 +61,7 @@ class _PendingRegistrosScreenState extends State<PendingRegistrosScreen> {
   }
 
   Future<void> _tentarNovamente(PendingRegistro registro) async {
+    if (_perfilRevogado) return;
     await _queue.save(
       registro.copyWith(status: 'pending', attempts: 0, clearError: true),
     );
@@ -104,23 +110,44 @@ class _PendingRegistrosScreenState extends State<PendingRegistrosScreen> {
                   )
                 : const Icon(Icons.sync),
             tooltip: 'Sincronizar agora',
-            onPressed: _isSyncing ? null : _sincronizarAgora,
+            onPressed: (_isSyncing || _perfilRevogado) ? null : _sincronizarAgora,
           ),
         ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : _registros.isEmpty
-              ? _buildEmptyState()
-              : RefreshIndicator(
-                  onRefresh: _carregar,
-                  child: ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _registros.length,
-                    itemBuilder: (context, index) =>
-                        _buildItem(_registros[index]),
-                  ),
+          : Column(
+              children: [
+                if (_perfilRevogado) _buildBannerRevogado(),
+                Expanded(
+                  child: _registros.isEmpty
+                      ? _buildEmptyState()
+                      : RefreshIndicator(
+                          onRefresh: _carregar,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: _registros.length,
+                            itemBuilder: (context, index) =>
+                                _buildItem(_registros[index]),
+                          ),
+                        ),
                 ),
+              ],
+            ),
+    );
+  }
+
+  Widget _buildBannerRevogado() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: const Color(0xFFFFEBEE),
+      child: const Text(
+        'Este perfil perdeu acesso a esta base. Fale com o suporte. '
+        'Sincronização desativada, mas você ainda pode descartar registros '
+        'pendentes.',
+        style: TextStyle(color: Color(0xFFC62828), fontWeight: FontWeight.w600),
+      ),
     );
   }
 
@@ -196,7 +223,9 @@ class _PendingRegistrosScreenState extends State<PendingRegistrosScreen> {
               Row(
                 children: [
                   TextButton(
-                    onPressed: () => _tentarNovamente(registro),
+                    onPressed: _perfilRevogado
+                        ? null
+                        : () => _tentarNovamente(registro),
                     child: const Text('Tentar novamente'),
                   ),
                   TextButton(

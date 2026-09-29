@@ -52,6 +52,7 @@ class AppBootstrapService {
     try {
       _notifyProgress(InitializationStep.loadingCache);
       await OfflineCacheService.instance.init();
+      await AuthService.migrateLegacySessionIfNeeded();
 
       _notifyProgress(InitializationStep.loadingPreferences);
       await _loadPreferences();

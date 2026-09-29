@@ -37,6 +37,19 @@ class PendingRegistroQueue {
         .length;
   }
 
+  /// Registros que ainda não chegaram ao servidor — inclui `failed` (ao
+  /// contrário de [countPending], usado só como badge de "precisa de
+  /// atenção"). É a contagem certa para decidir se um perfil pode ser
+  /// removido do aparelho: um registro `failed` ainda é dado não enviado.
+  List<PendingRegistro> unsyncedFor({
+    required String database,
+    required int userId,
+  }) {
+    return pendingFor(database: database, userId: userId)
+        .where((r) => r.status != 'synced')
+        .toList();
+  }
+
   Future<void> save(PendingRegistro registro) async {
     await OfflineCacheService.instance.pendingRegistrosBox.put(
       registro.id,

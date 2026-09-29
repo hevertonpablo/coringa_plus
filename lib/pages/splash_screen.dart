@@ -3,7 +3,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../services/app_bootstrap_service.dart';
+import '../services/auth_service.dart';
 import 'auth_screen.dart';
+import 'meus_plantoes_screen.dart';
+import 'profile_selection_screen.dart';
 
 /// Splash Screen Flutter Customizada
 /// Responsável por carregar dados essenciais após o primeiro frame
@@ -48,7 +51,7 @@ class _SplashScreenState extends State<SplashScreen> {
       await Future.delayed(const Duration(milliseconds: 500));
 
       if (mounted && !_hasError) {
-        _navigateToAuth();
+        await _navigateToAuth();
       }
     } catch (e) {
       if (mounted) {
@@ -59,11 +62,14 @@ class _SplashScreenState extends State<SplashScreen> {
     }
   }
 
-  void _navigateToAuth() {
+  Future<void> _navigateToAuth() async {
+    final destino = await _resolveDestino();
+    if (!mounted) return;
+
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 300),
-        pageBuilder: (_, animation, secondaryAnimation) => const LoginScreen(),
+        pageBuilder: (_, animation, secondaryAnimation) => destino,
         transitionsBuilder: (_, animation, __, child) {
           final curved = CurvedAnimation(
             parent: animation,
@@ -73,6 +79,25 @@ class _SplashScreenState extends State<SplashScreen> {
         },
       ),
     );
+  }
+
+  /// Perfil ativo e destravado -> auto login direto no app; perfil ativo
+  /// travado (30 dias sem revalidar) ou revogado, ou nenhum ativo mas há
+  /// outros perfis preparados -> tela de seleção; nenhum perfil preparado
+  /// neste aparelho -> login (comportamento de hoje, exige internet).
+  Future<Widget> _resolveDestino() async {
+    final perfilAtivo = await AuthService.getActiveProfile();
+    if (perfilAtivo != null) {
+      final status = perfilAtivo.effectiveStatus(DateTime.now());
+      if (status == 'active') return const MeusPlantoesScreen();
+      return const ProfileSelectionScreen();
+    }
+
+    if (await AuthService.hasPreparedProfiles()) {
+      return const ProfileSelectionScreen();
+    }
+
+    return const LoginScreen();
   }
 
   void _retry() {

@@ -17,6 +17,7 @@ class RegistroService {
     double? longitude,
     double? latitude,
     required File selfieFile,
+    String? idempotencyKey,
   }) async {
     // Converte a imagem para base64 com MIME type correto
     final bytes = await selfieFile.readAsBytes();
@@ -39,6 +40,10 @@ class RegistroService {
       if (longitude != null) 'longitude': longitude.toString(),
       if (latitude != null) 'latitude': latitude.toString(),
       'selfie': base64Image,
+      // ⚠️ Preparado no cliente para permitir dedupe no backend em
+      // retentativas (ex. resposta perdida após o servidor já ter
+      // processado); sem confirmação de que a API já deduplica por ele.
+      if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
     };
 
     final response = await http.put('/v1/registro', body);

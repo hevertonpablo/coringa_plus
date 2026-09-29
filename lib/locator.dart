@@ -30,7 +30,7 @@ void setupLocator() {
   getIt.registerLazySingleton(() => ConnectivityService.instance);
   getIt.registerLazySingleton(() => PendingRegistroQueue.instance);
 
-  getIt.registerFactory(
+  getIt.registerLazySingleton(
     () => PlantaoRepository(getIt<PlantaoService>(), getIt<OfflineCacheService>()),
   );
   getIt.registerFactory(
@@ -41,5 +41,5 @@ void setupLocator() {
     ),
   );
 
-  SyncManager.configure(getIt<RegistroService>());
+  SyncManager.configure(getIt<RegistroService>(), getIt<PlantaoRepository>());
 }
