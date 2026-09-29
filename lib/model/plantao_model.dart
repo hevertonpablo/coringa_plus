@@ -18,6 +18,7 @@ class Plantao {
   final int? toleranciaAntecipada;
   final int? toleranciaAtraso;
   final bool permiteRegistroAtraso;
+  final bool offline;
 
   Plantao({
     required this.plantaoId,
@@ -39,6 +40,7 @@ class Plantao {
     this.toleranciaAntecipada,
     this.toleranciaAtraso,
     this.permiteRegistroAtraso = true,
+    this.offline = false,
   });
 
   factory Plantao.fromJson(Map<String, dynamic> json) {
@@ -68,11 +70,24 @@ class Plantao {
       permiteRegistroAtraso: _parsePermiteRegistroAtraso(
         json['permite_registro_atraso'],
       ),
+      offline: _parseOffline(json['offline']),
     );
   }
 
   static bool _parsePermiteRegistroAtraso(dynamic value) {
     if (value == null) return true;
+
+    if (value is bool) return value;
+
+    final normalizado = value.toString().trim().toUpperCase();
+    return normalizado == 'S' || normalizado == '1' || normalizado == 'TRUE';
+  }
+
+  /// Diferente de [_parsePermiteRegistroAtraso], "offline" é opt-in: quando
+  /// ausente na resposta da API, o plantão deve ser tratado como um plantão
+  /// normal (exige GPS e internet), por isso o fallback é `false`.
+  static bool _parseOffline(dynamic value) {
+    if (value == null) return false;
 
     if (value is bool) return value;
 
@@ -110,6 +125,7 @@ class Plantao {
       'tolerancia_antecipada_entrada': toleranciaAntecipada,
       'tolerancia_atraso_entrada': toleranciaAtraso,
       'permite_registro_atraso': permiteRegistroAtraso ? 'S' : 'N',
+      'offline': offline ? 'S' : 'N',
     };
   }
 }

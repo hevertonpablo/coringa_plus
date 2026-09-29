@@ -5,6 +5,7 @@ import '../helper/tolerance_validator.dart';
 import '../locator.dart'; // <- para acessar o getIt
 import '../model/plantao_model.dart';
 import '../model/user_model.dart';
+import '../repositories/plantao_repository.dart';
 import '../services/auth_service.dart';
 import '../services/plantao_service.dart';
 
@@ -12,10 +13,17 @@ class PlantaoController {
   late UserModel _usuario;
   Plantao? _plantaoAtual;
   List<Plantao> _plantoes = [];
+  bool _isUltimaListaDoCache = false;
+  DateTime? _ultimaListaCacheadaEm;
 
   UserModel get usuario => _usuario;
   Plantao? get plantaoAtual => _plantaoAtual;
   List<Plantao> get plantoes => List.unmodifiable(_plantoes);
+
+  /// `true` quando a última chamada a [listarPlantoes]/[inicializar] não
+  /// conseguiu falar com a API e serviu a lista cacheada localmente (Hive).
+  bool get isUltimaListaDoCache => _isUltimaListaDoCache;
+  DateTime? get ultimaListaCacheadaEm => _ultimaListaCacheadaEm;
   Plantao? get plantaoSeguinte {
     final atual = _plantaoAtual;
     if (atual == null) return null;
@@ -32,12 +40,15 @@ class PlantaoController {
 
   Future<List<Plantao>> listarPlantoes() async {
     _usuario = (await AuthService.getUser())!;
-    final plantaoService = getIt<PlantaoService>();
-    final plantoes = await plantaoService.buscarPlantoesDoUsuario(
-      _usuario.id,
-      int.parse(_usuario.database),
+    final plantaoRepository = getIt<PlantaoRepository>();
+    final resultado = await plantaoRepository.buscarPlantoesDoUsuario(
+      userId: _usuario.id,
+      baseId: int.parse(_usuario.database),
+      database: _usuario.database,
     );
-    return plantoes;
+    _isUltimaListaDoCache = resultado.isFromCache;
+    _ultimaListaCacheadaEm = resultado.cachedAt;
+    return resultado.plantoes;
   }
 
   Future<List<Plantao>> listarHistoricoPlantoes() async {

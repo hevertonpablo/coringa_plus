@@ -63,6 +63,18 @@ class LocationValidatorController {
 
     final posicaoAtual = await _obterPosicaoAtual();
 
+    if (posicaoAtual.isMocked) {
+      await CrashReportingService.instance.recordMockLocationDetected(
+        unidade: unidadeNome,
+        latitude: posicaoAtual.latitude,
+        longitude: posicaoAtual.longitude,
+      );
+      throw Exception(
+        'Localização falsa detectada. Desative apps de localização falsa '
+        '(GPS fake) para registrar o ponto',
+      );
+    }
+
     final distancia = Geolocator.distanceBetween(
       unidadeLatitude,
       unidadeLongitude,
@@ -80,6 +92,7 @@ class LocationValidatorController {
         longitude: posicaoAtual.longitude,
         distanciaEmMetros: distancia,
         raioPermitidoEmMetros: raioPermitidoEmMetros,
+        accuracyEmMetros: posicaoAtual.accuracy,
       );
     }
 

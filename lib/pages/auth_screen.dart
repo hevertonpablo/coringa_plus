@@ -163,8 +163,8 @@ class _LoginScreenState extends State<LoginScreen> {
         database: database,
       );
 
-      _showMessage('Bem-vindo, ${user.nome}');
       if (!mounted) return;
+      _showMessage('Bem-vindo, ${user.nome}');
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const MeusPlantoesScreen()),
@@ -175,6 +175,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showMessage(String message) {
+    // O widget pode já ter sido desmontado (usuário navegou/app foi pra
+    // background durante o login), o que quebraria o context com null-check.
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );

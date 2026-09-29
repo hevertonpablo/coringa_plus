@@ -14,8 +14,8 @@ class RegistroService {
     required DateTime dataHora,
     required String tipo, // 'E' para entrada, 'S' para saída
     required String database,
-    required double longitude,
-    required double latitude,
+    double? longitude,
+    double? latitude,
     required File selfieFile,
   }) async {
     // Converte a imagem para base64 com MIME type correto
@@ -36,8 +36,8 @@ class RegistroService {
       'dataHora': dataHoraFormatada,
       'tipo': tipo,
       'database': database,
-      'longitude': longitude.toString(),
-      'latitude': latitude.toString(),
+      if (longitude != null) 'longitude': longitude.toString(),
+      if (latitude != null) 'latitude': latitude.toString(),
       'selfie': base64Image,
     };
 

@@ -12,8 +12,9 @@ import '../controller/plantao_controller.dart';
 import '../helper/tolerance_validator.dart';
 import '../locator.dart';
 import '../model/plantao_model.dart';
+import '../repositories/registro_repository.dart';
 import '../services/auth_service.dart';
-import '../services/registro_service.dart';
+import '../services/crash_reporting_service.dart';
 
 class SelfieCaptureScreen extends StatefulWidget {
   final Plantao? plantaoSelecionado;
@@ -136,7 +137,7 @@ class FaceScanIconPainter extends CustomPainter {
 
 class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   late final PlantaoController _plantaoController;
-  late final RegistroService _registroService;
+  late final RegistroRepository _registroRepository;
   late CameraController _controller;
   late Future<void> _initializeControllerFuture;
 
@@ -162,19 +163,36 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
     _initializeControllerFuture = _initCamera();
     _plantaoController = PlantaoController();
-    _registroService = getIt<RegistroService>();
+    _registroRepository = getIt<RegistroRepository>();
     _inicializarController();
     _startStatusTimer();
   }
 
   Future<void> _initCamera() async {
-    final cameras = await availableCameras();
-    final frontCamera = cameras.firstWhere(
-      (camera) => camera.lensDirection == CameraLensDirection.front,
-    );
-    _controller = CameraController(frontCamera, ResolutionPreset.medium);
-    await _controller.initialize();
-    await _startFaceDetectionStream();
+    try {
+      final cameras = await availableCameras();
+      final frontCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.front,
+      );
+      _controller = CameraController(frontCamera, ResolutionPreset.medium);
+      await _controller.initialize();
+      await _startFaceDetectionStream();
+    } catch (error, stackTrace) {
+      await CrashReportingService.instance.recordError(
+        error,
+        stackTrace,
+        reason: 'Falha ao inicializar a câmera para registro de presença',
+      );
+      rethrow;
+    }
+  }
+
+  Future<void> _tentarNovamenteCamera() {
+    final future = _initCamera();
+    setState(() {
+      _initializeControllerFuture = future;
+    });
+    return future;
   }
 
   Future<void> _startFaceDetectionStream() async {
@@ -328,9 +346,39 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   Future<void> _inicializarController() async {
-    await _plantaoController.inicializar(
-      plantaoSelecionado: widget.plantaoSelecionado,
-    );
+    try {
+      await _plantaoController.inicializar(
+        plantaoSelecionado: widget.plantaoSelecionado,
+      );
+    } catch (error, stackTrace) {
+      // Erro de rede/API ao carregar os plantões: reporta e mostra estado
+      // amigável em vez de deixar a exceção subir sem tratamento e derrubar
+      // o app (chamada disparada sem await no initState).
+      await CrashReportingService.instance.recordError(
+        error,
+        stackTrace,
+        reason: 'Falha ao carregar plantões do usuário',
+      );
+      if (!mounted) return;
+      _updateStatusMessage(); // plantaoAtual segue null -> mensagem padrão
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Não foi possível carregar seus plantões. Verifique sua internet.',
+          ),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+          action: SnackBarAction(
+            label: 'Tentar novamente',
+            textColor: Colors.white,
+            onPressed: _inicializarController,
+          ),
+        ),
+      );
+      return;
+    }
+
     if (!mounted) return;
     _updateStatusMessage();
     setState(() {}); // Atualiza a UI após carregar plantões
@@ -559,20 +607,29 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         return;
       }
 
-      // Validar localização
-      final validacaoLocalizacao =
-          await _plantaoController.validarLocalizacaoUsuarioDetalhada();
-      if (!validacaoLocalizacao.dentroDoRaio) {
-        _showMessage(
-          'Você está fora do raio permitido '
-          '(${validacaoLocalizacao.distanciaEmMetros.toStringAsFixed(0)}m '
-          'de ${validacaoLocalizacao.raioPermitidoEmMetros.toStringAsFixed(0)}m)',
-          isError: true,
-        );
-        return;
-      }
+      // Plantões marcados como offline (locais sem GPS/internet, ex.
+      // presídios e órgãos que bloqueiam sinal) pulam a validação de
+      // localização por completo — nenhuma permissão é solicitada e
+      // nenhuma coordenada é enviada no registro.
+      double? longitude;
+      double? latitude;
 
-      final position = validacaoLocalizacao.posicaoAtual;
+      if (!plantao.offline) {
+        final validacaoLocalizacao =
+            await _plantaoController.validarLocalizacaoUsuarioDetalhada();
+        if (!validacaoLocalizacao.dentroDoRaio) {
+          _showMessage(
+            'Você está fora do raio permitido '
+            '(${validacaoLocalizacao.distanciaEmMetros.toStringAsFixed(0)}m '
+            'de ${validacaoLocalizacao.raioPermitidoEmMetros.toStringAsFixed(0)}m)',
+            isError: true,
+          );
+          return;
+        }
+
+        longitude = validacaoLocalizacao.posicaoAtual.longitude;
+        latitude = validacaoLocalizacao.posicaoAtual.latitude;
+      }
 
       // Validar tolerâncias de horário
       final agora = DateTime.now();
@@ -615,19 +672,29 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         return;
       }
 
-      // Enviar registro
-      final response = await _registroService.registrarPonto(
-        plantaoId: plantao.plantaoId,
+      // Enviar registro (ou enfileirar localmente, se o plantão for
+      // offline e não houver conexão no momento)
+      final resultado = await _registroRepository.registrarPonto(
+        plantao: plantao,
         dataHora: agora,
         tipo: tipoRegistro,
         database: user.database,
-        longitude: position.longitude,
-        latitude: position.latitude,
+        userId: user.id,
+        longitude: longitude,
+        latitude: latitude,
         selfieFile: File(image.path),
       );
 
-      if (response['status'] == 'success') {
-        final tipoTexto = tipoRegistro == 'E' ? 'Entrada' : 'Saída';
+      final tipoTexto = tipoRegistro == 'E' ? 'Entrada' : 'Saída';
+
+      if (resultado.isQueued) {
+        _showMessage(
+          '$tipoTexto registrada localmente. Será enviada automaticamente '
+          'quando houver internet.',
+          isError: false,
+          isQueued: true,
+        );
+      } else if (resultado.response?['status'] == 'success') {
         final proximoPlantao = tipoRegistro == 'S'
             ? PlantaoController.encontrarProximoPlantaoElegivelParaInicio(
                 _plantaoController.plantoes,
@@ -636,26 +703,27 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
               )
             : null;
 
+        _showMessage('$tipoTexto registrada com sucesso!', isError: false);
+
         if (proximoPlantao != null) {
-          _showMessage('$tipoTexto registrada com sucesso!', isError: false);
           await _oferecerInicioProximoPlantao(
             proximoPlantao: proximoPlantao,
             dataHora: agora,
             database: user.database,
-            longitude: position.longitude,
-            latitude: position.latitude,
+            userId: user.id,
+            longitude: longitude,
+            latitude: latitude,
             selfieFile: File(image.path),
           );
-        } else {
-          _showMessage('$tipoTexto registrada com sucesso!', isError: false);
         }
-
-        // Recarregar plantões para atualizar status
-        await _plantaoController.inicializar();
-        _updateStatusMessage();
       } else {
         _showMessage('Erro ao registrar ponto', isError: true);
+        return;
       }
+
+      // Recarregar plantões para atualizar status
+      await _plantaoController.inicializar();
+      _updateStatusMessage();
     } catch (e) {
       final mensagem = e.toString().replaceFirst('Exception: ', '');
       _showMessage('Erro: $mensagem', isError: true);
@@ -671,8 +739,9 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     required Plantao proximoPlantao,
     required DateTime dataHora,
     required String database,
-    required double longitude,
-    required double latitude,
+    required int userId,
+    double? longitude,
+    double? latitude,
     required File selfieFile,
   }) async {
     if (!mounted) return;
@@ -711,17 +780,25 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     }
 
     try {
-      final response = await _registroService.registrarPonto(
-        plantaoId: proximoPlantao.plantaoId,
+      final resultado = await _registroRepository.registrarPonto(
+        plantao: proximoPlantao,
         dataHora: dataHora,
         tipo: 'E',
         database: database,
+        userId: userId,
         longitude: longitude,
         latitude: latitude,
         selfieFile: selfieFile,
       );
 
-      if (response['status'] == 'success') {
+      if (resultado.isQueued) {
+        _showMessage(
+          'Plantão anterior finalizado. Novo plantão registrado localmente '
+          'e será enviado quando houver internet.',
+          isError: false,
+          isQueued: true,
+        );
+      } else if (resultado.response?['status'] == 'success') {
         _showMessage(
           'Plantão anterior finalizado e novo plantão iniciado com sucesso!',
           isError: false,
@@ -742,13 +819,26 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     }
   }
 
-  void _showMessage(String message, {required bool isError}) {
+  void _showMessage(
+    String message, {
+    required bool isError,
+    bool isQueued = false,
+  }) {
     if (!mounted) return;
+
+    final Color backgroundColor;
+    if (isError) {
+      backgroundColor = Colors.red;
+    } else if (isQueued) {
+      backgroundColor = Colors.orange;
+    } else {
+      backgroundColor = Colors.green;
+    }
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: backgroundColor,
         duration: const Duration(seconds: 3),
       ),
     );
@@ -851,10 +941,45 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
     );
   }
 
+  Widget _buildCameraErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.camera_alt_outlined, size: 48, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text(
+              'Não foi possível acessar a câmera.\n'
+              'Verifique se o app tem permissão de câmera nas configurações '
+              'do aparelho e tente novamente.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Colors.black87),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _tentarNovamenteCamera,
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.teal),
+              child: const Text(
+                'Tentar novamente',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSelfiePage() {
     return FutureBuilder(
       future: _initializeControllerFuture,
       builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildCameraErrorState();
+        }
+
         if (snapshot.connectionState != ConnectionState.done) {
           return const Center(child: CircularProgressIndicator());
         }
