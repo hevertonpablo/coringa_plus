@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import '../model/pending_registro.dart';
 import '../model/plantao_model.dart';
 import '../services/connectivity_service.dart';
+import '../services/offline_cache_service.dart';
 import '../services/pending_registro_queue.dart';
 import '../services/registro_service.dart';
 
@@ -37,9 +38,15 @@ class RegistroRepository {
   final RegistroService _registroService;
   final PendingRegistroQueue _queue;
   final ConnectivityService _connectivity;
+  final OfflineCacheService _cache;
   final _uuid = const Uuid();
 
-  RegistroRepository(this._registroService, this._queue, this._connectivity);
+  RegistroRepository(
+    this._registroService,
+    this._queue,
+    this._connectivity,
+    this._cache,
+  );
 
   Future<RegistroResult> registrarPonto({
     required Plantao plantao,
@@ -120,6 +127,18 @@ class RegistroRepository {
     );
 
     await _queue.enqueue(pending);
+
+    // Atualização otimista do cache local: sem isso, o plantão continuaria
+    // aparecendo como pendente offline e o usuário conseguiria registrar a
+    // mesma entrada/saída várias vezes antes de reconectar.
+    final scopeKey = _cache.scopeKey(database: database, userId: userId);
+    await _cache.marcarPontoLocal(
+      scopeKey,
+      plantaoId: plantao.plantaoId,
+      tipo: tipo,
+      dataHora: dataHora,
+    );
+
     return pending;
   }
 

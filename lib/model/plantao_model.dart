@@ -43,6 +43,36 @@ class Plantao {
     this.offline = false,
   });
 
+  /// Cópia com a entrada/saída marcada localmente — usado para atualizar o
+  /// cache offline (Hive) de forma otimista quando um registro é enfileirado
+  /// sem internet, já que o servidor só vai confirmar depois da sincronização.
+  /// Sem isso, o plantão continuaria aparecendo como "pendente" no cache e
+  /// permitiria registrar a mesma entrada/saída várias vezes offline.
+  Plantao comPontoRegistrado({required String tipo, required DateTime dataHora}) {
+    return Plantao(
+      plantaoId: plantaoId,
+      unidade: unidade,
+      unidadeLongitude: unidadeLongitude,
+      unidadeLatitude: unidadeLatitude,
+      unidadeRaio: unidadeRaio,
+      unidadeEndereco: unidadeEndereco,
+      nome: nome,
+      nomeSocial: nomeSocial,
+      especialidade: especialidade,
+      setor: setor,
+      horasPlantao: horasPlantao,
+      turno: turno,
+      dtEntrada: dtEntrada,
+      dtSaida: dtSaida,
+      dtEntradaPonto: tipo == 'E' ? dataHora : dtEntradaPonto,
+      dtSaidaPonto: tipo == 'S' ? dataHora : dtSaidaPonto,
+      toleranciaAntecipada: toleranciaAntecipada,
+      toleranciaAtraso: toleranciaAtraso,
+      permiteRegistroAtraso: permiteRegistroAtraso,
+      offline: offline,
+    );
+  }
+
   factory Plantao.fromJson(Map<String, dynamic> json) {
     return Plantao(
       plantaoId: json['plantao_id'],

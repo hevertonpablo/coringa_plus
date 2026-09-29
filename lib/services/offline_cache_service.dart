@@ -86,4 +86,33 @@ class OfflineCacheService {
     await _plantoesBox.delete(scopeKey);
     await _metaBox.delete('lastSyncPlantoes_$scopeKey');
   }
+
+  /// Marca a entrada/saída de um plantão diretamente no cache local, sem
+  /// esperar confirmação do servidor — necessário quando o registro é
+  /// enfileirado offline (`RegistroRepository`), já que sem isso o plantão
+  /// continuaria aparecendo como pendente no cache e permitiria registrar a
+  /// mesma entrada/saída várias vezes enquanto o app estiver offline.
+  ///
+  /// Não atualiza `lastSyncPlantoes_$scopeKey` (isso marcaria como se tivesse
+  /// havido uma sincronização online de verdade, o que afetaria o aviso de
+  /// "dados desatualizados").
+  Future<void> marcarPontoLocal(
+    String scopeKey, {
+    required int plantaoId,
+    required String tipo,
+    required DateTime dataHora,
+  }) async {
+    final cached = loadPlantoes(scopeKey);
+    if (cached == null) return;
+
+    final atualizado = cached
+        .map(
+          (p) => p.plantaoId == plantaoId
+              ? p.comPontoRegistrado(tipo: tipo, dataHora: dataHora)
+              : p,
+        )
+        .toList();
+
+    await _plantoesBox.put(scopeKey, atualizado);
+  }
 }

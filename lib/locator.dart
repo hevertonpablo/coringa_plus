@@ -38,6 +38,7 @@ void setupLocator() {
       getIt<RegistroService>(),
       getIt<PendingRegistroQueue>(),
       getIt<ConnectivityService>(),
+      getIt<OfflineCacheService>(),
     ),
   );
 
