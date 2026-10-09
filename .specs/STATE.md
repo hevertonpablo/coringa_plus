@@ -142,7 +142,7 @@
 **Current focus:** Estabilização multi-tenant offline sync + harness maturity
 **Open work:**
 - [x] ~~Idempotency test para `pending_registro_queue.dart`~~ (coberto por `plantao_com_ponto_registrado_test.dart`)
-- [ ] Discrimination sensor para sync reconnect logic
+- [x] ~~Discrimination sensor para sync reconnect logic~~ (commit 9aeca15, 7 testes em `test/sync_reconnect_discrimination_test.dart`)
 - [x] ~~Documentar payload schema version migration path~~ (spec `.specs/features/payload-version-migration/`, validação jev-code-review PASS)
 - [x] ~~Wire `check_commit.py` como pre-commit hook~~ (feito em P1)
 - [x] ~~Criar primeira feature spec retroativa (commit 4abf351 — idempotência offline)~~ (feito em P1)
