@@ -134,6 +134,16 @@
 **Plane tasks created (in dprimeira):** CORINGA-8 (preencher 3 gaps de teste), CORINGA-9 (workaround branch protection free tier)
 **Plane tasks orphaned (in casal-financeiro):** CORINGAPLU-1, CORINGAPLU-2 — devem ser movidas/deletadas manualmente pelo usuário se desejado
 
+### AD-016: Workaround em camadas para branch protection no GitHub Free
+**Date:** 2026-10-09
+**Status:** ✅ Confirmed (claude decision, pending team review)
+**Context:** GitHub Free não permite configurar "Required status checks to pass before merging" — qualquer contributor pode dar merge em `main` com CI vermelho, sem reviewer, ou com commits fora do Conventional Commits. Risco para o projeto porque CI já pega problemas mas ninguém impede o bypass.
+**Decision:** Defesa em 4 camadas: (1) hooks locais `pre-commit`/`commit-msg`/`pre-push` em `.git/hooks/`, (2) CI em `.github/workflows/ci.yml` com 4 jobs, (3) checklist manual do reviewer no PR template, (4) auditoria semanal via `gh api`. Documento de workaround em `docs/ci-branch-protection-workaround.md` detalha o que cada camada cobre, suas limitações, e quando vira desnecessário (upgrade GH Team, migração GitLab self-hosted, ou mudança no fluxo).
+**Rationale:** Nenhuma camada sozinha cobre tudo (hooks não pegam fork PRs, CI em Free não bloqueia merge, checklist depende de disciplina, auditoria é pós-fato). Empilhadas, cobrem o cenário de 1-pessoa Free-tier sem adicionar dependência externa. Custo de manutenção = 5 min/semana para a auditoria.
+**Alternatives considered:** Mergify/Bors (rejeitado, dependência externa + YAML), forçar trunk-based (rejeitado, ainda exposto a fork PRs).
+**Affected files:** `docs/ci-branch-protection-workaround.md` (novo)
+**Plane task closed:** CORINGA-9
+
 ## Handoff Snapshot
 
 > Updated at end of session. Re-validate against git on resume.
@@ -148,7 +158,7 @@
 - [x] ~~Criar primeira feature spec retroativa (commit 4abf351 — idempotência offline)~~ (feito em P1)
 - [x] ~~Adicionar `lib/services/connectivity_service.dart` ao test-verifier pattern~~ (coberto)
 - [x] ~~Preencher 3 gaps de teste restantes: `tolerance_validator`, `location_validator`, `pending_registro_queue`~~ (commit 8e374d9, 26 testes adicionados)
-- [ ] Configurar GitHub branch protection (4 required status checks)
+- [x] ~~Configurar GitHub branch protection (4 required status checks)~~ — workaround em camadas registrado em `docs/ci-branch-protection-workaround.md` (AD-016); toggle nativo indisponível no Free, workarounds cobrem hooks locais + CI + checklist + auditoria semanal
 
 ## Active features
 
