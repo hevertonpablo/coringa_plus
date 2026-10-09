@@ -6,6 +6,8 @@ import 'package:coringa_plus/model/pending_registro.dart';
 import 'package:coringa_plus/model/plantao_model.dart';
 import 'package:coringa_plus/repositories/registro_repository.dart';
 import 'package:coringa_plus/services/connectivity_service.dart';
+import 'package:coringa_plus/services/http_exceptions.dart';
+import 'package:coringa_plus/services/local_profile_registry.dart';
 import 'package:coringa_plus/services/offline_cache_service.dart';
 import 'package:coringa_plus/services/pending_registro_queue.dart';
 import 'package:coringa_plus/services/registro_service.dart';
@@ -243,6 +245,111 @@ void main() {
 
       await tmp.delete().catchError((_) => tmp);
     });
+
+    test(
+        'CORINGA-15: offline plantão + HTTP 401/403 (acesso revogado) '
+        'NÃO cai pra fila — marca profile como revoked e re-lança',
+        () async {
+      // Cenário: o profissional está batendo ponto em um plantão
+      // offline-eligible. connectivity_plus diz "online" e o
+      // profissional vê a tela de captura normalmente. Mas a API
+      // responde 401/403 dizendo que o acesso a esta base foi
+      // revogado (ex.: desligamento da empresa, mudança de base).
+      //
+      // Comportamento esperado:
+      //   1. A exceção ApiRejectedException é re-lançada (não
+      //      engole, não enfileira) — o profissional precisa ver a
+      //      mensagem específica.
+      //   2. O perfil local é marcado como 'revoked' no Hive, então
+      //      a próxima vez o seletor de bases esconde esta base.
+      //   3. A fila NÃO recebe o registro (seria inútil — nunca ia
+      //      sincronizar; ficaria preso pra sempre).
+      final fakeService = _FakeRegistroService(
+        onCall: (_) => throw ApiRejectedException(403, 'forbidden'),
+      );
+      final fakeQueue = _RecordingQueue();
+      final fakeCache = _RecordingCache();
+      final fakeConn = _FakeConnectivity(online: true);
+      final fakeProfile = _FakeLocalProfileRegistry();
+
+      final repo = RegistroRepository(
+        fakeService,
+        fakeQueue,
+        fakeConn,
+        fakeCache,
+        localProfileRegistry: fakeProfile,
+      );
+      final plantao = _offlinePlantao();
+      final tmp = await _writeTempSelfie();
+
+      await expectLater(
+        repo.registrarPonto(
+          plantao: plantao,
+          dataHora: DateTime(2026, 10, 9, 7),
+          tipo: 'E',
+          database: 'db1',
+          userId: 1,
+          selfieFile: tmp,
+        ),
+        throwsA(isA<ApiRejectedException>()),
+        reason: 'acesso revogado deve propagar para a UI mostrar o modal',
+      );
+
+      expect(fakeService.calls, 1,
+          reason: 'tentou HTTP antes de re-lançar a exceção');
+      expect(fakeQueue.enqueued, isEmpty,
+          reason: 'CORINGA-15: NÃO enfileira — registro seria inútil');
+      expect(fakeCache.marked, isEmpty,
+          reason: 'cache otimista NÃO foi atualizado — ponto não foi aceito');
+      expect(fakeProfile.revokedKeys, contains('db1:1'),
+          reason: 'profile local marcado como revoked pra sumir do seletor');
+
+      await tmp.delete().catchError((_) => tmp);
+    });
+
+    test(
+        'CORINGA-15: rejeição por API NÃO é confundida com sinal '
+        'instável (soltar não-ApiRejectedException ainda cai pra fila)',
+        () async {
+      // Garante que a separação do try/catch não quebrou o
+      // comportamento original: um socket reset (que NÃO é
+      // ApiRejectedException) ainda cai pro fallback da fila.
+      final fakeService = _FakeRegistroService(
+        onCall: (_) => throw StateError('socket closed mid-flight'),
+      );
+      final fakeQueue = _RecordingQueue();
+      final fakeCache = _RecordingCache();
+      final fakeConn = _FakeConnectivity(online: true);
+      final fakeProfile = _FakeLocalProfileRegistry();
+
+      final repo = RegistroRepository(
+        fakeService,
+        fakeQueue,
+        fakeConn,
+        fakeCache,
+        localProfileRegistry: fakeProfile,
+      );
+      final plantao = _offlinePlantao();
+      final tmp = await _writeTempSelfie();
+
+      final result = await repo.registrarPonto(
+        plantao: plantao,
+        dataHora: DateTime(2026, 10, 9, 7),
+        tipo: 'E',
+        database: 'db1',
+        userId: 1,
+        selfieFile: tmp,
+      );
+
+      expect(result.isQueued, isTrue,
+          reason: 'sinal instável não-ApiRejectedException continua '
+              'caindo pra fila (comportamento original preservado)');
+      expect(fakeQueue.enqueued, hasLength(1));
+      expect(fakeProfile.revokedKeys, isEmpty,
+          reason: 'profile NÃO foi marcado revoked (não foi 401/403)');
+
+      await tmp.delete().catchError((_) => tmp);
+    });
   });
 }
 
@@ -352,6 +459,21 @@ class _FakeConnectivity implements ConnectivityService {
 
   @override
   Stream<bool> get onConnectivityChanged => const Stream.empty();
+}
+
+class _FakeLocalProfileRegistry implements LocalProfileRegistry {
+  final List<String> revokedKeys = [];
+
+  @override
+  Future<void> markRevoked(String scopeKey) async {
+    revokedKeys.add(scopeKey);
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) =>
+      throw UnimplementedError(
+        'FakeLocalProfileRegistry stub: ${invocation.memberName}',
+      );
 }
 
 Plantao _offlinePlantao() => Plantao(

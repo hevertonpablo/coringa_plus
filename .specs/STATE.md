@@ -144,6 +144,16 @@
 **Affected files:** `docs/ci-branch-protection-workaround.md` (novo)
 **Plane task closed:** CORINGA-9
 
+### AD-017: Distinguir erro de API de sinal instável no caminho offline
+**Date:** 2026-10-09
+**Status:** ✅ Confirmed
+**Context:** Profissional com plantão offline-eligible batia ponto, connectivity_plus reportava "online", mas a API respondia 401/403 (acesso revogado pelo gestor). O `RegistroRepository` tinha um `catch (_)` silencioso que engolia QUALQUER exceção e enfileirava o registro. Resultado: profissional via "registrada localmente" (sucesso!), registro ficava na fila, e o `SyncManager` (já com revalidação por tenant) pulava o item pra sempre porque o tenant estava revoked. Pior UX possível: profissional achava que tinha batido ponto mas perdeu.
+**Decision:** (1) `registro_repository.dart` separa o catch: `ApiRejectedException` marca o profile como `'revoked'` no Hive via `LocalProfileRegistry.markRevoked(scopeKey)` e re-lança; outros erros (socket reset, timeout) continuam caindo pra fila (sinal instável ainda é caso pra fallback). (2) `selfie_capture_screen.dart` no `catch (e)`: se `e is ApiRejectedException`, mostra `AlertDialog` "Acesso a esta base foi revogado. Procure o suporte." + `popUntil(isFirst)`. (3) `RegistroRepository` agora aceita `LocalProfileRegistry?` opcional no construtor (default = singleton) para que testes unitários injetem um fake sem inicializar Hive. (4) Registros pendentes dessa base ficam na fila (não são deletados) — SyncManager já tinha o comentário "revoked: pula, NUNCA sincroniza nem descarta — fica visível pro usuário decidir" (sync_manager.dart:184-186); o profissional vê na tela de pendências e descarta manualmente se quiser.
+**Rationale:** O problema de fundo era que o catch tratava "sinal instável" e "decisão de negócio" como a mesma coisa. São semanticamente diferentes: o primeiro é recuperável, o segundo é terminal. Antes da correção, perdíamos informação sem o profissional saber; agora o erro chega ao profissional, o profile some do seletor de bases, e o registro fica na fila pra decisão manual (não perdemos dado).
+**Affected files:** `lib/repositories/registro_repository.dart`, `lib/pages/selfie_capture_screen.dart`, `test/registro_repository_test.dart`
+**Tests added:** 2 em `test/registro_repository_test.dart` — (a) ApiRejectedException em plantão offline marca profile revoked e re-lança sem enfileirar; (b) StateError não-ApiRejectedException ainda cai pra fila (regressão protegida).
+**Plane task closed:** CORINGA-15
+
 ## Handoff Snapshot
 
 > Updated at end of session. Re-validate against git on resume.
@@ -159,6 +169,8 @@
 - [x] ~~Adicionar `lib/services/connectivity_service.dart` ao test-verifier pattern~~ (coberto)
 - [x] ~~Preencher 3 gaps de teste restantes: `tolerance_validator`, `location_validator`, `pending_registro_queue`~~ (commit 8e374d9, 26 testes adicionados)
 - [x] ~~Configurar GitHub branch protection (4 required status checks)~~ — workaround em camadas registrado em `docs/ci-branch-protection-workaround.md` (AD-016); toggle nativo indisponível no Free, workarounds cobrem hooks locais + CI + checklist + auditoria semanal
+- [x] ~~CORINGA-14: popUntil(isFirst) após registro bem-sucedido (evita toque duplo)~~ (commit 049e403, teste estático em `test/selfie_capture_navigation_test.dart`)
+- [x] ~~CORINGA-15: distinguir 401/403 de sinal instável no caminho offline do `RegistroRepository`~~ (AD-017)
 
 ## Active features
 

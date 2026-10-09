@@ -18,6 +18,7 @@ import '../model/plantao_model.dart';
 import '../repositories/registro_repository.dart';
 import '../services/auth_service.dart';
 import '../services/crash_reporting_service.dart';
+import '../services/http_exceptions.dart';
 
 class SelfieCaptureScreen extends StatefulWidget {
   final Plantao? plantaoSelecionado;
@@ -744,6 +745,17 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e) {
+      if (e is ApiRejectedException) {
+        // CORINGA-15: o backend rejeitou a batida (acesso revogado).
+        // Mostra modal com mensagem específica e volta à tela inicial
+        // — o profissional precisa saber que NÃO vai conseguir bater
+        // ponto nesta base, não apenas que "deu erro".
+        await _showAcessoRevogadoDialog();
+        if (mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+        return;
+      }
       final mensagem = e.toString().replaceFirst('Exception: ', '');
       _showMessage('Erro: $mensagem', isError: true);
     } finally {
@@ -880,6 +892,33 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         isError: true,
       );
     }
+  }
+
+  /// CORINGA-15: modal exibido quando o backend rejeita a batida de
+  /// ponto com 401/403 ("acesso a esta base foi revogado"). Diferente
+  /// do snackbar vermelho genérico, este diálogo deixa claro que o
+  /// profissional NÃO vai conseguir registrar ponto nesta base e
+  /// orienta a procurar o suporte. O botão OK fecha o diálogo e o
+  /// caller (`_captureImage`) faz `popUntil(isFirst)` em seguida.
+  Future<void> _showAcessoRevogadoDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Acesso revogado'),
+        content: const Text(
+          'O acesso a esta base foi revogado. Procure o suporte da sua '
+          'empresa para regularizar a situação.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showMessage(

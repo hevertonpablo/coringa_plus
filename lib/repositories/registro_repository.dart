@@ -6,6 +6,8 @@ import 'package:uuid/uuid.dart';
 import '../model/pending_registro.dart';
 import '../model/plantao_model.dart';
 import '../services/connectivity_service.dart';
+import '../services/http_exceptions.dart';
+import '../services/local_profile_registry.dart';
 import '../services/offline_cache_service.dart';
 import '../services/pending_registro_queue.dart';
 import '../services/registro_service.dart';
@@ -17,11 +19,7 @@ class RegistroResult {
   final Map<String, dynamic>? response;
   final PendingRegistro? pending;
 
-  const RegistroResult._({
-    required this.isQueued,
-    this.response,
-    this.pending,
-  });
+  const RegistroResult._({required this.isQueued, this.response, this.pending});
 
   factory RegistroResult.online(Map<String, dynamic> response) =>
       RegistroResult._(isQueued: false, response: response);
@@ -39,14 +37,17 @@ class RegistroRepository {
   final PendingRegistroQueue _queue;
   final ConnectivityService _connectivity;
   final OfflineCacheService _cache;
+  final LocalProfileRegistry _localProfileRegistry;
   final _uuid = const Uuid();
 
   RegistroRepository(
     this._registroService,
     this._queue,
     this._connectivity,
-    this._cache,
-  );
+    this._cache, {
+    LocalProfileRegistry? localProfileRegistry,
+  }) : _localProfileRegistry =
+            localProfileRegistry ?? LocalProfileRegistry.instance;
 
   Future<RegistroResult> registrarPonto({
     required Plantao plantao,
@@ -86,10 +87,23 @@ class RegistroRepository {
           selfieFile: selfieFile,
         );
         return RegistroResult.online(response);
+      } on ApiRejectedException {
+        // CORINGA-15: o backend rejeitou a batida (401/403 = acesso
+        // revogado, ou outro erro de validação do servidor). Isso NÃO
+        // é "sinal instável" — é uma decisão de negócio que precisa
+        // chegar ao profissional. Marca o perfil como revogado para
+        // que o seletor de bases esconda esta base daqui pra frente
+        // e re-lança a exceção pra a UI exibir a mensagem específica.
+        // (Outros tipos de erro continuam caindo pro fallback abaixo,
+        // preservando o comportamento original.)
+        final scopeKey = _cache.scopeKey(database: database, userId: userId);
+        await _localProfileRegistry.markRevoked(scopeKey);
+        rethrow;
       } catch (_) {
         // connectivity_plus disse "online" mas a chamada falhou mesmo
-        // assim (sinal instável) — como o plantão é elegível para
-        // offline, cai para a fila em vez de barrar o profissional.
+        // assim (sinal instável, timeout, socket reset, ...) — como o
+        // plantão é elegível para offline, cai para a fila em vez de
+        // barrar o profissional.
       }
     }
 
@@ -124,6 +138,7 @@ class RegistroRepository {
       userId: userId,
       selfiePath: stablePath,
       createdAt: DateTime.now(),
+      payloadVersion: PendingRegistro.currentPayloadVersion,
     );
 
     await _queue.enqueue(pending);
