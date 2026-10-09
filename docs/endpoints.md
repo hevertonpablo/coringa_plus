@@ -126,6 +126,61 @@ baseId: ID da base de dados (empresa), obtido via /v1/dbase.
 }
 ```
 
+### Campo `offline` (offline-first)
+
+> **Adicionado em 2026-10-09 — task CORINGA-12.**
+> Documentação retroativa: o app depende deste campo desde a feature
+> de offline-first multi-tenant (commit `4c91135`).
+
+O campo `offline` controla se a unidade onde o plantão ocorre permite
+que o profissional bata ponto **sem internet e sem GPS**. É uma flag
+**por unidade** — qualquer profissional alocado numa unidade com
+`offline = "S"` herda o direito, independente de horário, perfil ou
+cargo.
+
+**Quando usar `"S"`:** unidades em locais sem cobertura de celular ou
+GPS (presídios, órgãos públicos com blindagem eletromagnética,
+subsolos de hospitais), ou unidades atrás de firewall corporativo
+que bloqueia o domínio do backend.
+
+**Valores aceitos pelo cliente** (`lib/model/plantao_model.dart:_parseOffline`):
+
+| Valor da API | Interpretado como |
+|--------------|-------------------|
+| `"S"` | `true` (offline permitido) |
+| `"N"` | `false` (offline proibido) |
+| `"1"` | `true` |
+| `"true"` (case-insensitive) | `true` |
+| `true` (boolean nativo) | `true` |
+| Ausente / `null` | **`false`** (opt-in — silêncio = sem offline) |
+| Qualquer outro valor | `false` (fallback seguro) |
+
+**Exemplo de payload atualizado:**
+
+```json
+{
+    "plantao_id": 2183,
+    "unidade": "Penitenciária Central",
+    "unidade_longitude": "-42.85126060846283",
+    "unidade_latitude": "-22.732155329366655",
+    "unidade_raio": 500,
+    "offline": "S",
+    ...
+}
+```
+
+**Comportamento do app quando `offline = "S"`:**
+
+1. Não exige GPS — pula `validarLocalizacaoUsuarioDetalhada()`
+2. Não exige internet — se `isOnline()` for `false` ou se a chamada
+   HTTP falhar por instabilidade, enfileira em `PendingRegistroQueue`
+3. Envia coordenadas como `"0"` (sentinela, ver `lib/services/registro_service.dart:43-44`)
+
+**Risco se o backend remover ou renomear a chave:** todos os
+plantões caem no fallback `false` e o modo offline some silenciosamente,
+sem erro visível ao usuário ou ao time. Mudanças neste campo DEVEM
+ser combinadas com release do app e comunicação ao suporte.
+
 ## GET /v1/plantao/{plantaoId}/{baseId}
 - Esse endpoint retorna os detalhes completos de um plantão específico do usuário, identificado pelo ID do plantão.
 - Funciona como a visualização individual (show) de um plantão.
