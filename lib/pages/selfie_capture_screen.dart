@@ -745,11 +745,18 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e) {
-      if (e is ApiRejectedException) {
-        // CORINGA-15: o backend rejeitou a batida (acesso revogado).
-        // Mostra modal com mensagem específica e volta à tela inicial
-        // — o profissional precisa saber que NÃO vai conseguir bater
-        // ponto nesta base, não apenas que "deu erro".
+      if (e is ApiRejectedException && e.isAccessRevoked) {
+        // CORINGA-15: o backend rejeitou por acesso revogado
+        // (401/403, ou body com "status":"error"+"autoriza").
+        // Mostra modal com mensagem específica e volta à tela
+        // inicial — o profissional precisa saber que NÃO vai
+        // conseguir bater ponto nesta base, não apenas que
+        // "deu erro". Outros ApiRejectedException (400, 404
+        // — erro de validação desta batida específica) caem
+        // no snackbar genérico abaixo. A regra `isAccessRevoked`
+        // está em `ApiRejectedException` (http_exceptions.dart) e
+        // é compartilhada com `RegistroRepository` para garantir
+        // que ambos tratem o mesmo conjunto de respostas.
         await _showAcessoRevogadoDialog();
         if (mounted) {
           Navigator.of(context).popUntil((route) => route.isFirst);

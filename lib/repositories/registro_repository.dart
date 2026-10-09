@@ -87,17 +87,24 @@ class RegistroRepository {
           selfieFile: selfieFile,
         );
         return RegistroResult.online(response);
-      } on ApiRejectedException {
-        // CORINGA-15: o backend rejeitou a batida (401/403 = acesso
-        // revogado, ou outro erro de validação do servidor). Isso NÃO
-        // é "sinal instável" — é uma decisão de negócio que precisa
-        // chegar ao profissional. Marca o perfil como revogado para
-        // que o seletor de bases esconda esta base daqui pra frente
-        // e re-lança a exceção pra a UI exibir a mensagem específica.
-        // (Outros tipos de erro continuam caindo pro fallback abaixo,
-        // preservando o comportamento original.)
-        final scopeKey = _cache.scopeKey(database: database, userId: userId);
-        await _localProfileRegistry.markRevoked(scopeKey);
+      } on ApiRejectedException catch (e) {
+        // CORINGA-15: o backend rejeitou a batida. Isso NÃO é
+        // "sinal instável" — é uma decisão do servidor. Mas nem todo
+        // ApiRejectedException é "acesso revogado":
+        //   - 401/403 (token global inválido) → o profile local não
+        //     presta mais; marca como revoked e re-lança pra UI
+        //     exibir modal.
+        //   - 400/404/422 (erro de validação: plantão não existe,
+        //     horário fora da janela, base inválida) → re-lança pra
+        //     UI exibir o snackbar genérico, MAS NÃO marca como
+        //     revoked (seria desproporcional — o acesso à base em si
+        //     ainda é válido, foi só ESTA batida que falhou).
+        // A regra `e.isAccessRevoked` (extension em http_exceptions.dart)
+        // é compartilhada com a UI para garantir consistência.
+        if (e.isAccessRevoked) {
+          final scopeKey = _cache.scopeKey(database: database, userId: userId);
+          await _localProfileRegistry.markRevoked(scopeKey);
+        }
         rethrow;
       } catch (_) {
         // connectivity_plus disse "online" mas a chamada falhou mesmo

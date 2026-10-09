@@ -247,25 +247,19 @@ void main() {
     });
 
     test(
-        'CORINGA-15: offline plantão + HTTP 401/403 (acesso revogado) '
+        'CORINGA-15: offline plantão + HTTP 401 (acesso revogado) '
         'NÃO cai pra fila — marca profile como revoked e re-lança',
         () async {
-      // Cenário: o profissional está batendo ponto em um plantão
-      // offline-eligible. connectivity_plus diz "online" e o
-      // profissional vê a tela de captura normalmente. Mas a API
-      // responde 401/403 dizendo que o acesso a esta base foi
-      // revogado (ex.: desligamento da empresa, mudança de base).
-      //
-      // Comportamento esperado:
-      //   1. A exceção ApiRejectedException é re-lançada (não
-      //      engole, não enfileira) — o profissional precisa ver a
-      //      mensagem específica.
-      //   2. O perfil local é marcado como 'revoked' no Hive, então
-      //      a próxima vez o seletor de bases esconde esta base.
-      //   3. A fila NÃO recebe o registro (seria inútil — nunca ia
-      //      sincronizar; ficaria preso pra sempre).
+      // Cenário verificado via curl real (out/2026) na API
+      // https://app.coringaplus.com:
+      //   PUT /v1/registro com Authorization inválida →
+      //   HTTP 401 + body `{"status":"error","data":"Erro de autorização"}`
+      //   (validado em 2026-10-09 com token hardcoded alterado).
       final fakeService = _FakeRegistroService(
-        onCall: (_) => throw ApiRejectedException(403, 'forbidden'),
+        onCall: (_) => throw ApiRejectedException(
+          401,
+          '{"status":"error","data":"Erro de autorização"}',
+        ),
       );
       final fakeQueue = _RecordingQueue();
       final fakeCache = _RecordingCache();
@@ -295,14 +289,151 @@ void main() {
         reason: 'acesso revogado deve propagar para a UI mostrar o modal',
       );
 
-      expect(fakeService.calls, 1,
-          reason: 'tentou HTTP antes de re-lançar a exceção');
+      expect(fakeService.calls, 1);
       expect(fakeQueue.enqueued, isEmpty,
           reason: 'CORINGA-15: NÃO enfileira — registro seria inútil');
-      expect(fakeCache.marked, isEmpty,
-          reason: 'cache otimista NÃO foi atualizado — ponto não foi aceito');
+      expect(fakeCache.marked, isEmpty);
       expect(fakeProfile.revokedKeys, contains('db1:1'),
-          reason: 'profile local marcado como revoked pra sumir do seletor');
+          reason: '401 = acesso revogado → profile some do seletor');
+
+      await tmp.delete().catchError((_) => tmp);
+    });
+
+    test(
+        'CORINGA-15: offline plantão + HTTP 403 (Forbidden) também '
+        'marca profile como revoked',
+        () async {
+      // 403 é aceito defensivamente como "acesso revogado" mesmo
+      // sem ter sido exercitado contra o backend (que retorna 401).
+      // Convenção HTTP padrão: 403 = "Forbidden" = cliente
+      // autenticado mas sem permissão pra ESTE recurso.
+      final fakeService = _FakeRegistroService(
+        onCall: (_) => throw ApiRejectedException(403, '{"forbidden":true}'),
+      );
+      final fakeQueue = _RecordingQueue();
+      final fakeCache = _RecordingCache();
+      final fakeConn = _FakeConnectivity(online: true);
+      final fakeProfile = _FakeLocalProfileRegistry();
+
+      final repo = RegistroRepository(
+        fakeService,
+        fakeQueue,
+        fakeConn,
+        fakeCache,
+        localProfileRegistry: fakeProfile,
+      );
+      final plantao = _offlinePlantao();
+      final tmp = await _writeTempSelfie();
+
+      await expectLater(
+        repo.registrarPonto(
+          plantao: plantao,
+          dataHora: DateTime(2026, 10, 9, 7),
+          tipo: 'E',
+          database: 'db1',
+          userId: 1,
+          selfieFile: tmp,
+        ),
+        throwsA(isA<ApiRejectedException>()),
+      );
+      expect(fakeProfile.revokedKeys, contains('db1:1'));
+
+      await tmp.delete().catchError((_) => tmp);
+    });
+
+    test(
+        'CORINGA-15: HTTP 404 (plantão não existe) re-lança MAS NÃO '
+        'marca profile como revoked — é erro desta batida, não da base',
+        () async {
+      // Verificado via curl real: PUT /v1/registro com plantaoId
+      // inexistente → HTTP 404 + body
+      // {"status":"success","data":{"error":{"code":404,"message":"Não
+      // foram encontrados registros"}}}.
+      // Distinguir de 401 é crucial: marcar como revoked esconderia
+      // a base INTEIRA do seletor, mas o acesso à base em si está
+      // perfeito — só este plantão específico não existe.
+      final fakeService = _FakeRegistroService(
+        onCall: (_) => throw ApiRejectedException(
+          404,
+          '{"status":"success","data":{"error":{"code":404,"message":'
+              '"Não foram encontrados registros"}}}',
+        ),
+      );
+      final fakeQueue = _RecordingQueue();
+      final fakeCache = _RecordingCache();
+      final fakeConn = _FakeConnectivity(online: true);
+      final fakeProfile = _FakeLocalProfileRegistry();
+
+      final repo = RegistroRepository(
+        fakeService,
+        fakeQueue,
+        fakeConn,
+        fakeCache,
+        localProfileRegistry: fakeProfile,
+      );
+      final plantao = _offlinePlantao();
+      final tmp = await _writeTempSelfie();
+
+      await expectLater(
+        repo.registrarPonto(
+          plantao: plantao,
+          dataHora: DateTime(2026, 10, 9, 7),
+          tipo: 'E',
+          database: 'db1',
+          userId: 1,
+          selfieFile: tmp,
+        ),
+        throwsA(isA<ApiRejectedException>()),
+        reason: 'erro de validação ainda propaga (UI mostra snackbar)',
+      );
+      expect(fakeProfile.revokedKeys, isEmpty,
+          reason: '404 NÃO é acesso revogado — base continua válida');
+
+      await tmp.delete().catchError((_) => tmp);
+    });
+
+    test(
+        'CORINGA-15: HTTP 400 (validação de credencial) re-lança MAS '
+        'NÃO marca profile como revoked',
+        () async {
+      // Verificado via curl real: POST /v1/login com pwd errado →
+      // HTTP 400 + body
+      // {"status":"success","data":{"error":{"code":400,"message":
+      // "Usuário não encontrado"}}}.
+      final fakeService = _FakeRegistroService(
+        onCall: (_) => throw ApiRejectedException(
+          400,
+          '{"status":"success","data":{"error":{"code":400,'
+              '"message":"Usuário não encontrado"}}}',
+        ),
+      );
+      final fakeQueue = _RecordingQueue();
+      final fakeCache = _RecordingCache();
+      final fakeConn = _FakeConnectivity(online: true);
+      final fakeProfile = _FakeLocalProfileRegistry();
+
+      final repo = RegistroRepository(
+        fakeService,
+        fakeQueue,
+        fakeConn,
+        fakeCache,
+        localProfileRegistry: fakeProfile,
+      );
+      final plantao = _offlinePlantao();
+      final tmp = await _writeTempSelfie();
+
+      await expectLater(
+        repo.registrarPonto(
+          plantao: plantao,
+          dataHora: DateTime(2026, 10, 9, 7),
+          tipo: 'E',
+          database: 'db1',
+          userId: 1,
+          selfieFile: tmp,
+        ),
+        throwsA(isA<ApiRejectedException>()),
+      );
+      expect(fakeProfile.revokedKeys, isEmpty);
 
       await tmp.delete().catchError((_) => tmp);
     });

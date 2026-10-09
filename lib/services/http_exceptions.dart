@@ -30,4 +30,33 @@ class ApiRejectedException extends AppHttpException {
   final String? responseBody;
   ApiRejectedException(this.statusCode, this.responseBody)
       : super('Erro $statusCode do servidor');
+
+  /// CORINGA-15: distingue "acesso revogado" (o token global ou a
+  /// autorização da base não vale mais — profile inteiro some do
+  /// seletor) de "erro de validação desta batida" (400/404 — só esta
+  /// tentativa falhou, o profile continua válido).
+  ///
+  /// Heurística verificada via curl real (out/2026) no backend
+  /// `app.coringaplus.com`:
+  ///   - 401 → body `{"status":"error","data":"Erro de autorização"}`
+  ///   - 403 → (convenção HTTP; aceito defensivamente)
+  ///   - 400/404/422 → body
+  ///     `{"status":"success","data":{"error":{"code":404,...}}}`
+  ///     (erro de negócio, NÃO de auth)
+  ///
+  /// Usado em:
+  ///   - `RegistroRepository._isAccessRevoked` → decide se marca
+  ///     o profile como `'revoked'` no Hive
+  ///   - `SelfieCaptureScreen._isAccessRevoked` → decide se mostra
+  ///     o modal "Acesso revogado" + `popUntil(isFirst)` ou o snackbar
+  ///     genérico
+  bool get isAccessRevoked {
+    if (statusCode == 401 || statusCode == 403) return true;
+    // Defesa em profundidade: alguns backends embrulham a falha de
+    // auth num 200/400 com `status:"error"` no body. Se o body
+    // contiver "autoriza" (Erro de autorização / Unauthorized / ...),
+    // ainda tratamos como revoked.
+    final body = responseBody ?? '';
+    return body.contains('"status":"error"') && body.contains('autoriza');
+  }
 }
