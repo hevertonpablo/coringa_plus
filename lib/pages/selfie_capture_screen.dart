@@ -734,7 +734,15 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         return;
       }
 
-      if (mounted) Navigator.of(context).pop(true);
+      // CORINGA-14: volta à tela inicial após sucesso. Pequeno delay
+      // para o profissional ver o feedback visual (snackbar verde)
+      // antes da transição, evitando que ele toque de novo sem querer
+      // e bata a saída logo após a entrada (cenário "toque duplo").
+      if (mounted) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } catch (e) {
       final mensagem = e.toString().replaceFirst('Exception: ', '');
       _showMessage('Erro: $mensagem', isError: true);
