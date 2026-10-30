@@ -1,0 +1,181 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'feature/**', 'fix/**', 'release/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel a previous in-progress run of the same branch if a new commit lands.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────────
+  # 1. Lint + type check (fast — no test execution)
+  # ──────────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (flutter analyze)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FVM
+        uses: fvm-sh/setup-fvm@v1
+        with:
+          fvm-version: 3.2.1
+
+      - name: Install Flutter
+        run: fvm install
+
+      - name: Use project Flutter version
+        run: fvm use
+
+      - name: Cache pub deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            .fvm/flutter_sdk
+            ${{ github.workspace }}/.dart_tool
+          key: pub-${{ runner.os }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml', '.fvmrc') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: fvm flutter pub get
+
+      - name: Analyze
+        run: fvm flutter analyze --no-pub
+
+      - name: Format check
+        run: |
+          if ! fvm flutter format --output=none --set-exit-if-changed lib test; then
+            echo "::error::Run 'fvm flutter format lib test' locally to fix."
+            exit 1
+          fi
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 2. Tests with coverage
+  # ──────────────────────────────────────────────────────────────────────
+  test:
+    name: Tests (flutter test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FVM
+        uses: fvm-sh/setup-fvm@v1
+        with:
+          fvm-version: 3.2.1
+
+      - name: Install Flutter
+        run: fvm install
+
+      - name: Use project Flutter version
+        run: fvm use
+
+      - name: Cache pub deps
+        uses: actions/cache@v4
+        with:
+          path: |
+            .fvm/flutter_sdk
+            ${{ github.workspace }}/.dart_tool
+          key: pub-${{ runner.os }}-${{ hashFiles('**/pubspec.lock', '**/pubspec.yaml', '.fvmrc') }}
+          restore-keys: pub-${{ runner.os }}-
+
+      - name: Install dependencies
+        run: fvm flutter pub get
+
+      - name: Run tests
+        run: fvm flutter test --coverage --reporter=expanded
+
+      - name: Upload coverage artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          retention-days: 14
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 3. Spec-driven validation (tlc-spec-driven)
+  #    Validates EARS-shaped acceptance criteria + state completion.
+  # ──────────────────────────────────────────────────────────────────────
+  spec-validation:
+    name: Spec validation (tlc-spec-driven)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate every spec.md
+        # Each .specs/features/<name>/spec.md must pass validate_spec.py.
+        # We use a guard so a missing .specs/ dir doesn't fail the job.
+        run: |
+          set -e
+          if [ ! -d .specs/features ]; then
+            echo "::notice::No .specs/features/ — skipping spec validation."
+            exit 0
+          fi
+
+          FAILED=0
+          for spec in .specs/features/*/spec.md; do
+            echo "─── $spec ───"
+            if ! python3 .claude/skills/tlc-spec-driven/scripts/validate_spec.py "$spec"; then
+              FAILED=1
+            fi
+          done
+
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::One or more spec.md files failed validation."
+            exit 1
+          fi
+
+      - name: Validate state (feature completion)
+        run: |
+          set -e
+          if [ ! -d .specs/features ]; then
+            echo "::notice::No .specs/features/ — skipping state validation."
+            exit 0
+          fi
+          python3 .claude/skills/tlc-spec-driven/scripts/validate_state.py \
+            --root "$GITHUB_WORKSPACE"
+
+  # ──────────────────────────────────────────────────────────────────────
+  # 4. Conventional Commits gate (matches local commit-msg hook)
+  #    Runs on PRs only — pushes are gated by the local hook.
+  # ──────────────────────────────────────────────────────────────────────
+  conventional-commits:
+    name: Conventional Commits
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate PR commits
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -e
+          FAILED=0
+          for sha in $(git rev-list "$BASE_SHA".."$HEAD_SHA" --no-merges); do
+            msg=$(git log -1 --format='%s' "$sha")
+            echo "─── $sha: $msg ───"
+            if ! python3 .claude/skills/tlc-spec-driven/scripts/check_commit.py \
+                  --message "$msg"; then
+              FAILED=1
+            fi
+          done
+          if [ "$FAILED" -ne 0 ]; then
+            echo "::error::One or more PR commits don't follow Conventional Commits."
+            echo "See https://www.conventionalcommits.org/"
+            exit 1
+          fi
