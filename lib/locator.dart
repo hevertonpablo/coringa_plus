@@ -4,6 +4,7 @@ import 'controller/login_controller.dart';
 import 'interfaces/http_interfaces.dart';
 import 'repositories/plantao_repository.dart';
 import 'repositories/registro_repository.dart';
+import 'services/automatic_sync_service.dart';
 import 'services/connectivity_service.dart';
 import 'services/http_service.dart';
 import 'services/offline_cache_service.dart';
@@ -43,4 +44,10 @@ void setupLocator() {
   );
 
   SyncManager.configure(getIt<RegistroService>(), getIt<PlantaoRepository>());
+  getIt.registerLazySingleton(
+    () => AutomaticSyncService(
+      syncRunner: SyncManager.shared,
+      connectivity: getIt<ConnectivityService>(),
+    ),
+  );
 }

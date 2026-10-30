@@ -25,7 +25,7 @@ class RegistroService {
     final base64Image = 'data:$mimeType;base64,${base64Encode(bytes)}';
 
     // Formata a data/hora no formato esperado pela API
-    final dataHoraFormatada = 
+    final dataHoraFormatada =
         "${dataHora.year.toString().padLeft(4, '0')}-"
         "${dataHora.month.toString().padLeft(2, '0')}-"
         "${dataHora.day.toString().padLeft(2, '0')} "
@@ -37,12 +37,11 @@ class RegistroService {
       'dataHora': dataHoraFormatada,
       'tipo': tipo,
       'database': database,
-      // ⚠️ Plantões offline não têm GPS — a API não documenta o formato
-      // esperado quando não há localização, então mandamos string vazia
-      // em vez de omitir os campos (um 404 foi observado com os campos
-      // ausentes; a ser confirmado com o backend qual formato é o certo).
-      'longitude': longitude?.toString() ?? '',
-      'latitude': latitude?.toString() ?? '',
+      // Plantões offline não coletam GPS. A API legada interpola estes campos
+      // como números no SQL, portanto usa-se zero como sentinela numérico em
+      // vez de vazio/null quando não há localização.
+      'longitude': longitude?.toString() ?? '0',
+      'latitude': latitude?.toString() ?? '0',
       'selfie': base64Image,
       // ⚠️ Preparado no cliente para permitir dedupe no backend em
       // retentativas (ex. resposta perdida após o servidor já ter
@@ -58,7 +57,7 @@ class RegistroService {
   /// Retorna 'image/jpeg' como padrão para câmeras
   String _getMimeType(String filePath) {
     final extension = filePath.split('.').last.toLowerCase();
-    
+
     switch (extension) {
       case 'jpg':
       case 'jpeg':

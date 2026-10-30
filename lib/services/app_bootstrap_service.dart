@@ -6,9 +6,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../locator.dart';
 import '../controller/login_controller.dart';
 import '../services/auth_service.dart';
+import '../services/automatic_sync_service.dart';
 import '../services/crash_reporting_service.dart';
 import '../services/offline_cache_service.dart';
-import '../services/sync_manager.dart';
 
 /// Serviço centralizado para gerenciar inicialização do app
 /// Separa startup crítico de não-crítico para otimizar Time to First Frame
@@ -54,6 +54,10 @@ class AppBootstrapService {
       await OfflineCacheService.instance.init();
       await AuthService.migrateLegacySessionIfNeeded();
 
+      // Começa a observar startup, retomada e reconexão assim que a fila
+      // local está disponível; não espera nenhuma outra chamada de rede.
+      getIt<AutomaticSyncService>().start();
+
       _notifyProgress(InitializationStep.loadingPreferences);
       await _loadPreferences();
 
@@ -68,10 +72,6 @@ class AppBootstrapService {
 
       _notifyProgress(InitializationStep.completed);
       _isInitialized = true;
-
-      // Fire-and-forget: tenta sincronizar registros de ponto capturados
-      // offline (não bloqueia o startup nem falha a inicialização).
-      unawaited(SyncManager.shared.syncPendingRegistros());
 
       if (kDebugMode) {
         print('[Bootstrap] Inicialização não-crítica concluída');
