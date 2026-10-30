@@ -3,6 +3,8 @@
 ///
 /// [status] é `'pending'` | `'syncing'` | `'synced'` | `'failed'`.
 class PendingRegistro {
+  static const currentPayloadVersion = 1;
+
   final String id;
   final int plantaoId;
   final String tipo; // 'E' ou 'S'
@@ -15,6 +17,7 @@ class PendingRegistro {
   final DateTime createdAt;
   final String? lastErrorMessage;
   final DateTime? syncedAt;
+  final int payloadVersion;
 
   const PendingRegistro({
     required this.id,
@@ -29,6 +32,7 @@ class PendingRegistro {
     required this.createdAt,
     this.lastErrorMessage,
     this.syncedAt,
+    this.payloadVersion = currentPayloadVersion,
   });
 
   PendingRegistro copyWith({
@@ -38,6 +42,7 @@ class PendingRegistro {
     String? lastErrorMessage,
     bool clearError = false,
     DateTime? syncedAt,
+    int? payloadVersion,
   }) {
     return PendingRegistro(
       id: id,
@@ -50,9 +55,11 @@ class PendingRegistro {
       status: status ?? this.status,
       attempts: attempts ?? this.attempts,
       createdAt: createdAt,
-      lastErrorMessage:
-          clearError ? null : (lastErrorMessage ?? this.lastErrorMessage),
+      lastErrorMessage: clearError
+          ? null
+          : (lastErrorMessage ?? this.lastErrorMessage),
       syncedAt: syncedAt ?? this.syncedAt,
+      payloadVersion: payloadVersion ?? this.payloadVersion,
     );
   }
 }

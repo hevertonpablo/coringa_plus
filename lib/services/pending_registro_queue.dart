@@ -1,10 +1,15 @@
 import '../model/pending_registro.dart';
 import 'offline_cache_service.dart';
 
+abstract interface class PendingRegistroStore {
+  List<PendingRegistro> all();
+  Future<void> save(PendingRegistro registro);
+}
+
 /// CRUD sobre a box `pendingRegistrosBox` — fila de registros de ponto
 /// capturados offline em plantões com `Plantao.offline == true`, aguardando
 /// sincronização com a API.
-class PendingRegistroQueue {
+class PendingRegistroQueue implements PendingRegistroStore {
   PendingRegistroQueue._();
   static final PendingRegistroQueue instance = PendingRegistroQueue._();
 
@@ -17,6 +22,7 @@ class PendingRegistroQueue {
 
   /// Todos os pendentes do dispositivo (usado pelo [SyncManager], que
   /// sincroniza independente de qual usuário está logado no momento).
+  @override
   List<PendingRegistro> all() {
     return OfflineCacheService.instance.pendingRegistrosBox.values.toList();
   }
@@ -32,11 +38,22 @@ class PendingRegistroQueue {
   }
 
   int countPending({required String database, required int userId}) {
-    return pendingFor(database: database, userId: userId)
-        .where((r) => r.status == 'pending' || r.status == 'syncing')
-        .length;
+    return unsyncedFor(database: database, userId: userId).length;
   }
 
+  /// Registros que ainda não chegaram ao servidor — inclui `pending`,
+  /// `syncing` e `failed`. É a contagem usada tanto no badge quanto para
+  /// impedir que um perfil com dados não enviados seja removido.
+  List<PendingRegistro> unsyncedFor({
+    required String database,
+    required int userId,
+  }) {
+    return pendingFor(database: database, userId: userId)
+        .where((r) => r.status != 'synced')
+        .toList();
+  }
+
+  @override
   Future<void> save(PendingRegistro registro) async {
     await OfflineCacheService.instance.pendingRegistrosBox.put(
       registro.id,

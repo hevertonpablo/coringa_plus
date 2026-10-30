@@ -31,6 +31,7 @@ class LoginController {
     required String login,
     required String senha,
     required String database,
+    required String baseDisplayName,
   }) async {
     if (login.isEmpty || senha.isEmpty || database.isEmpty) {
       throw Exception('Preencha todos os campos.');
@@ -46,7 +47,7 @@ class LoginController {
       final userData = response['data'];
       userData['database'] = database;
       final user = UserModel.fromJson(userData);
-      await AuthService.saveUser(user);
+      await AuthService.saveUser(user, baseDisplayName: baseDisplayName);
       return user;
     } else {
       throw Exception('Login inválido.');

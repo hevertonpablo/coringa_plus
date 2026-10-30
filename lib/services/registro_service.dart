@@ -17,6 +17,7 @@ class RegistroService {
     double? longitude,
     double? latitude,
     required File selfieFile,
+    String? idempotencyKey,
   }) async {
     // Converte a imagem para base64 com MIME type correto
     final bytes = await selfieFile.readAsBytes();
@@ -24,7 +25,7 @@ class RegistroService {
     final base64Image = 'data:$mimeType;base64,${base64Encode(bytes)}';
 
     // Formata a data/hora no formato esperado pela API
-    final dataHoraFormatada = 
+    final dataHoraFormatada =
         "${dataHora.year.toString().padLeft(4, '0')}-"
         "${dataHora.month.toString().padLeft(2, '0')}-"
         "${dataHora.day.toString().padLeft(2, '0')} "
@@ -36,9 +37,16 @@ class RegistroService {
       'dataHora': dataHoraFormatada,
       'tipo': tipo,
       'database': database,
-      if (longitude != null) 'longitude': longitude.toString(),
-      if (latitude != null) 'latitude': latitude.toString(),
+      // Plantões offline não coletam GPS. A API legada interpola estes campos
+      // como números no SQL, portanto usa-se zero como sentinela numérico em
+      // vez de vazio/null quando não há localização.
+      'longitude': longitude?.toString() ?? '0',
+      'latitude': latitude?.toString() ?? '0',
       'selfie': base64Image,
+      // ⚠️ Preparado no cliente para permitir dedupe no backend em
+      // retentativas (ex. resposta perdida após o servidor já ter
+      // processado); sem confirmação de que a API já deduplica por ele.
+      if (idempotencyKey != null) 'idempotencyKey': idempotencyKey,
     };
 
     final response = await http.put('/v1/registro', body);
@@ -49,7 +57,7 @@ class RegistroService {
   /// Retorna 'image/jpeg' como padrão para câmeras
   String _getMimeType(String filePath) {
     final extension = filePath.split('.').last.toLowerCase();
-    
+
     switch (extension) {
       case 'jpg':
       case 'jpeg':

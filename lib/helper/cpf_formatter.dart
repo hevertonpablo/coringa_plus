@@ -43,4 +43,18 @@ class CpfFormatter extends TextInputFormatter {
   static String removeFormatting(String cpf) {
     return cpf.replaceAll(RegExp(r'\D'), '');
   }
+
+  /// Aplica a máscara (000.000.000-00) a um CPF já sem formatação — usado
+  /// para pré-preencher campos programaticamente (o `TextInputFormatter`
+  /// acima só reage a edição do usuário, não a `controller.text = ...`).
+  static String format(String cpf) {
+    final digitsOnly = removeFormatting(cpf);
+    String formatted = '';
+    for (int i = 0; i < digitsOnly.length && i < 11; i++) {
+      if (i == 3 || i == 6) formatted += '.';
+      if (i == 9) formatted += '-';
+      formatted += digitsOnly[i];
+    }
+    return formatted;
+  }
 }

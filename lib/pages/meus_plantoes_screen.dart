@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -7,11 +5,11 @@ import '../controller/plantao_controller.dart';
 import '../locator.dart';
 import '../model/plantao_model.dart';
 import '../services/auth_service.dart';
-import '../services/connectivity_service.dart';
+import '../services/automatic_sync_service.dart';
 import '../services/pending_registro_queue.dart';
-import '../services/sync_manager.dart';
 import 'auth_screen.dart';
 import 'pending_registros_screen.dart';
+import 'profile_selection_screen.dart';
 import 'selfie_capture_screen.dart';
 
 class MeusPlantoesScreen extends StatefulWidget {
@@ -21,8 +19,7 @@ class MeusPlantoesScreen extends StatefulWidget {
   State<MeusPlantoesScreen> createState() => _MeusPlantoesScreenState();
 }
 
-class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
-    with WidgetsBindingObserver {
+class _MeusPlantoesScreenState extends State<MeusPlantoesScreen> {
   late final PlantaoController _plantaoController;
   List<Plantao> _plantoes = [];
   List<Plantao> _historico = [];
@@ -33,42 +30,35 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
   String _abaSelecionada = 'hoje'; // hoje, proximos, historico
   bool _dadosDesatualizados = false;
   DateTime? _dadosAtualizadosEm;
+  bool _acessoRevogado = false;
   int _pendentesCount = 0;
-  StreamSubscription<bool>? _connectivitySubscription;
+  late final AutomaticSyncService _automaticSyncService;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addObserver(this);
     _plantaoController = PlantaoController();
+    _automaticSyncService = getIt<AutomaticSyncService>();
+    _automaticSyncService.lastSummary.addListener(_onAutomaticSyncCompleted);
     _loadUsuarioLogado();
     _carregarPlantoes();
     _atualizarContagemPendentes();
-    _dispararSincronizacao();
-    _connectivitySubscription = getIt<ConnectivityService>()
-        .onConnectivityChanged
-        .listen((online) {
-      if (online) _dispararSincronizacao();
-    });
   }
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _connectivitySubscription?.cancel();
+    _automaticSyncService.lastSummary.removeListener(
+      _onAutomaticSyncCompleted,
+    );
     super.dispose();
   }
 
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      _dispararSincronizacao();
+  void _onAutomaticSyncCompleted() {
+    if (!mounted) return;
+    _atualizarContagemPendentes();
+    if ((_automaticSyncService.lastSummary.value?.syncedThisRun ?? 0) > 0) {
+      _carregarPlantoes();
     }
-  }
-
-  Future<void> _dispararSincronizacao() async {
-    await SyncManager.shared.syncPendingRegistros();
-    await _atualizarContagemPendentes();
   }
 
   Future<void> _atualizarContagemPendentes() async {
@@ -105,6 +95,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
         _isLoading = false;
         _dadosDesatualizados = _plantaoController.isUltimaListaDoCache;
         _dadosAtualizadosEm = _plantaoController.ultimaListaCacheadaEm;
+        _acessoRevogado = _plantaoController.isPerfilRevogado;
       });
     } catch (e) {
       if (!mounted) return;
@@ -178,8 +169,12 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
     if (confirmar == true && mounted) {
       await AuthService.logout();
       if (!mounted) return;
+      final destino = await AuthService.hasPreparedProfiles()
+          ? const ProfileSelectionScreen()
+          : const LoginScreen();
+      if (!mounted) return;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        MaterialPageRoute(builder: (_) => destino),
         (route) => false,
       );
     }
@@ -382,7 +377,10 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 24),
                 children: [
-                  if (_dadosDesatualizados) _buildBannerDesatualizado(),
+                  if (_acessoRevogado)
+                    _buildBannerRevogado()
+                  else if (_dadosDesatualizados)
+                    _buildBannerDesatualizado(),
                   if (emAndamento != null)
                     _buildDestaqueCard(
                       plantao: emAndamento,
@@ -445,6 +443,33 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildBannerRevogado() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFEBEE),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: const Row(
+        children: [
+          Icon(Icons.block, size: 18, color: Color(0xFFC62828)),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Seu acesso a esta base foi revogado. Fale com o suporte.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFFC62828),
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -850,9 +875,8 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
         plantao.dtEntrada.year == agora.year &&
         plantao.dtEntrada.month == agora.month &&
         plantao.dtEntrada.day == agora.day;
-    final dataTexto = mesmoDia
-        ? 'Hoje'
-        : DateFormat('dd/MM/yyyy').format(plantao.dtEntrada);
+    final dataTexto =
+        mesmoDia ? 'Hoje' : DateFormat('dd/MM/yyyy').format(plantao.dtEntrada);
     return '$dataTexto • '
         '${DateFormat('HH:mm').format(plantao.dtEntrada)} às '
         '${DateFormat('HH:mm').format(plantao.dtSaida)}';
@@ -877,8 +901,7 @@ class _MeusPlantoesScreenState extends State<MeusPlantoesScreen>
         ),
         const SizedBox(height: 4),
         _infoLinha(Icons.work_outline, 'Setor: ${plantao.setor}'),
-        if (plantao.dtEntradaPonto != null ||
-            plantao.dtSaidaPonto != null) ...[
+        if (plantao.dtEntradaPonto != null || plantao.dtSaidaPonto != null) ...[
           const SizedBox(height: 6),
           if (plantao.dtEntradaPonto != null)
             _infoLinha(

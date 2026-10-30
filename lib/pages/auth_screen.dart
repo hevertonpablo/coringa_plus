@@ -9,7 +9,19 @@ import '../services/auth_service.dart';
 import 'meus_plantoes_screen.dart';
 
 class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+  /// Pré-preenche o formulário ao reautenticar uma base já conhecida (perfil
+  /// travado por inatividade ou com acesso revogado) — nunca inclui senha,
+  /// que não é persistida em nenhum lugar do app.
+  final String? prefillCpf;
+  final String? prefillDatabase;
+  final String? prefillBaseDisplayName;
+
+  const LoginScreen({
+    super.key,
+    this.prefillCpf,
+    this.prefillDatabase,
+    this.prefillBaseDisplayName,
+  });
 
   @override
   State<LoginScreen> createState() => _LoginScreenState();
@@ -25,18 +37,27 @@ class _LoginScreenState extends State<LoginScreen> {
   Map<String, String> perfisMap = {};
   String? selectedPerfilValue;
   bool isLoadingPerfis = false;
+  bool _perfilFieldSeeded = false;
 
   @override
   void initState() {
     super.initState();
     controller = getIt<LoginController>();
 
+    if (widget.prefillCpf != null) {
+      cpfController.text = CpfFormatter.format(widget.prefillCpf!);
+    }
+    if (widget.prefillDatabase != null && widget.prefillBaseDisplayName != null) {
+      selectedPerfilValue = widget.prefillDatabase;
+      perfilController.text = widget.prefillBaseDisplayName!;
+    }
+
     // Escuta mudanças no ValueNotifier de perfis
     AppBootstrapService.instance.perfisNotifier.addListener(_onPerfisLoaded);
-    
+
     // Verifica se perfis já foram carregados
     final cachedPerfis = AppBootstrapService.instance.cachedPerfis;
-    
+
     if (cachedPerfis != null && cachedPerfis.isNotEmpty) {
       // Perfis já estão disponíveis
       _setPerfisSync(cachedPerfis);
@@ -49,8 +70,11 @@ class _LoginScreenState extends State<LoginScreen> {
       });
     }
 
-    // Carrega o último perfil selecionado
-    _loadLastSelectedProfile();
+    // Carrega o último perfil selecionado (só quando não veio de um
+    // "reconecte essa base", que já define o perfil explicitamente)
+    if (widget.prefillDatabase == null) {
+      _loadLastSelectedProfile();
+    }
   }
 
   void _onPerfisLoaded() {
@@ -161,6 +185,7 @@ class _LoginScreenState extends State<LoginScreen> {
         login: cpf,
         senha: senha,
         database: database,
+        baseDisplayName: perfilController.text.trim(),
       );
 
       if (!mounted) return;
@@ -248,8 +273,17 @@ class _LoginScreenState extends State<LoginScreen> {
                   },
                   fieldViewBuilder: (context, textEditingController, focusNode,
                       onFieldSubmitted) {
-                    // Sincroniza o controller do Autocomplete com o perfilController
-                    perfilController.text = textEditingController.text;
+                    // Sincroniza o controller do Autocomplete com o
+                    // perfilController. No primeiro build, faz o contrário
+                    // (perfilController -> textEditingController) para não
+                    // descartar um valor pré-preenchido (ex. reconectar uma
+                    // base conhecida) antes mesmo do campo aparecer.
+                    if (!_perfilFieldSeeded) {
+                      _perfilFieldSeeded = true;
+                      textEditingController.text = perfilController.text;
+                    } else {
+                      perfilController.text = textEditingController.text;
+                    }
                     textEditingController.addListener(() {
                       if (perfilController.text != textEditingController.text) {
                         perfilController.text = textEditingController.text;

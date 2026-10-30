@@ -9,12 +9,16 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:intl/intl.dart';
 
 import '../controller/plantao_controller.dart';
+import '../controller/location_validator_controller.dart';
+import '../helper/face_validation_gate.dart';
+import '../helper/plantao_gps_resolver.dart';
 import '../helper/tolerance_validator.dart';
 import '../locator.dart';
 import '../model/plantao_model.dart';
 import '../repositories/registro_repository.dart';
 import '../services/auth_service.dart';
 import '../services/crash_reporting_service.dart';
+import '../services/http_exceptions.dart';
 
 class SelfieCaptureScreen extends StatefulWidget {
   final Plantao? plantaoSelecionado;
@@ -146,6 +150,10 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   bool _isProcessingFrame = false;
   bool _isFaceDetected = false;
   bool _isFacePositioned = false;
+  bool get _isFaceValidationSatisfied => isFaceValidationSatisfied(
+    isFacePositioned: _isFacePositioned,
+    debugBypassEnabled: isDebugFaceValidationBypassEnabled,
+  );
   String _faceDetectionMessage =
       'Posicione o rosto dentro do círculo e mantenha o celular estável.';
   Timer? _statusTimer;
@@ -211,7 +219,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   }
 
   InputImage? _convertCameraImage(CameraImage image) {
-    final rotation = InputImageRotationValue.fromRawValue(
+    final rotation =
+        InputImageRotationValue.fromRawValue(
           _controller.description.sensorOrientation,
         ) ??
         InputImageRotation.rotation0deg;
@@ -272,8 +281,9 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       for (int col = 0; col < uvWidth; col++) {
         final int uvIndex = ySize + row * width + col * 2;
         nv21[uvIndex] = vPlane.bytes[row * uvRowStride + col * uvPixelStride];
-        nv21[uvIndex + 1] = uPlane.bytes[
-            row * uPlane.bytesPerRow + col * (uPlane.bytesPerPixel ?? 1)];
+        nv21[uvIndex + 1] =
+            uPlane.bytes[row * uPlane.bytesPerRow +
+                col * (uPlane.bytesPerPixel ?? 1)];
       }
     }
 
@@ -293,7 +303,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         image.width.toDouble(),
         image.height.toDouble(),
       );
-      final bool positioned = hasFace &&
+      final bool positioned =
+          hasFace &&
           faces.any(
             (face) => _isFaceInsideGuide(face: face, imageSize: imageSize),
           );
@@ -584,8 +595,9 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
   void _captureImage() async {
     if (_isRegistering) return;
 
+    var registroConcluido = false;
     final bool isIniciarPlantao = _getTextoBotao() == 'Iniciar plantão';
-    if (isIniciarPlantao && !_isFacePositioned) {
+    if (isIniciarPlantao && !_isFaceValidationSatisfied) {
       _showMessage(
         'Posicione o rosto corretamente dentro do círculo para iniciar o plantão.',
         isError: true,
@@ -615,8 +627,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       double? latitude;
 
       if (!plantao.offline) {
-        final validacaoLocalizacao =
-            await _plantaoController.validarLocalizacaoUsuarioDetalhada();
+        final validacaoLocalizacao = await _plantaoController
+            .validarLocalizacaoUsuarioDetalhada();
         if (!validacaoLocalizacao.dentroDoRaio) {
           _showMessage(
             'Você está fora do raio permitido '
@@ -694,6 +706,7 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
           isError: false,
           isQueued: true,
         );
+        registroConcluido = true;
       } else if (resultado.response?['status'] == 'success') {
         final proximoPlantao = tipoRegistro == 'S'
             ? PlantaoController.encontrarProximoPlantaoElegivelParaInicio(
@@ -716,22 +729,51 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
             selfieFile: File(image.path),
           );
         }
+        registroConcluido = true;
       } else {
         _showMessage('Erro ao registrar ponto', isError: true);
         return;
       }
 
-      // Recarregar plantões para atualizar status
-      await _plantaoController.inicializar();
-      _updateStatusMessage();
+      // CORINGA-14: volta à tela inicial após sucesso. Pequeno delay
+      // para o profissional ver o feedback visual (snackbar verde)
+      // antes da transição, evitando que ele toque de novo sem querer
+      // e bata a saída logo após a entrada (cenário "toque duplo").
+      if (mounted) {
+        await Future<void>.delayed(const Duration(milliseconds: 600));
+        if (!mounted) return;
+        Navigator.of(context).popUntil((route) => route.isFirst);
+      }
     } catch (e) {
+      if (e is ApiRejectedException && e.isAccessRevoked) {
+        // CORINGA-15: o backend rejeitou por acesso revogado
+        // (401/403, ou body com "status":"error"+"autoriza").
+        // Mostra modal com mensagem específica e volta à tela
+        // inicial — o profissional precisa saber que NÃO vai
+        // conseguir bater ponto nesta base, não apenas que
+        // "deu erro". Outros ApiRejectedException (400, 404
+        // — erro de validação desta batida específica) caem
+        // no snackbar genérico abaixo. A regra `isAccessRevoked`
+        // está em `ApiRejectedException` (http_exceptions.dart) e
+        // é compartilhada com `RegistroRepository` para garantir
+        // que ambos tratem o mesmo conjunto de respostas.
+        await _showAcessoRevogadoDialog();
+        if (mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst);
+        }
+        return;
+      }
       final mensagem = e.toString().replaceFirst('Exception: ', '');
       _showMessage('Erro: $mensagem', isError: true);
     } finally {
-      await _startFaceDetectionStream();
-      setState(() {
-        _isRegistering = false;
-      });
+      if (!registroConcluido && mounted) {
+        await _startFaceDetectionStream();
+        if (mounted) {
+          setState(() {
+            _isRegistering = false;
+          });
+        }
+      }
     }
   }
 
@@ -779,6 +821,46 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
       return;
     }
 
+    // CORINGA-10: cada plantão traz sua própria flag offline. Não
+    // podemos herdar coords null do plantão anterior (que era offline)
+    // se o próximo é online — unidade online EXIGE GPS.
+    double? proximaLongitude = longitude;
+    double? proximaLatitude = latitude;
+    if (deveValidarGpsParaInicio(proximoPlantao)) {
+      try {
+        final latUnidade = double.parse(
+          proximoPlantao.unidadeLatitude.replaceAll(',', '.'),
+        );
+        final lngUnidade = double.parse(
+          proximoPlantao.unidadeLongitude.replaceAll(',', '.'),
+        );
+        final validador = LocationValidatorController(
+          unidadeLatitude: latUnidade,
+          unidadeLongitude: lngUnidade,
+          raioPermitidoEmMetros: proximoPlantao.unidadeRaio.toDouble(),
+          unidadeNome: proximoPlantao.unidade,
+        );
+        final validacao = await validador.validar();
+        if (!validacao.dentroDoRaio) {
+          _showMessage(
+            'Você está fora do raio permitido da nova unidade '
+            '(${validacao.distanciaEmMetros.toStringAsFixed(0)}m '
+            'de ${validacao.raioPermitidoEmMetros.toStringAsFixed(0)}m)',
+            isError: true,
+          );
+          return;
+        }
+        proximaLongitude = validacao.posicaoAtual.longitude;
+        proximaLatitude = validacao.posicaoAtual.latitude;
+      } catch (e) {
+        _showMessage(
+          'Não foi possível validar localização da nova unidade: $e',
+          isError: true,
+        );
+        return;
+      }
+    }
+
     try {
       final resultado = await _registroRepository.registrarPonto(
         plantao: proximoPlantao,
@@ -786,8 +868,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         tipo: 'E',
         database: database,
         userId: userId,
-        longitude: longitude,
-        latitude: latitude,
+        longitude: proximaLongitude,
+        latitude: proximaLatitude,
         selfieFile: selfieFile,
       );
 
@@ -817,6 +899,33 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
         isError: true,
       );
     }
+  }
+
+  /// CORINGA-15: modal exibido quando o backend rejeita a batida de
+  /// ponto com 401/403 ("acesso a esta base foi revogado"). Diferente
+  /// do snackbar vermelho genérico, este diálogo deixa claro que o
+  /// profissional NÃO vai conseguir registrar ponto nesta base e
+  /// orienta a procurar o suporte. O botão OK fecha o diálogo e o
+  /// caller (`_captureImage`) faz `popUntil(isFirst)` em seguida.
+  Future<void> _showAcessoRevogadoDialog() async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Acesso revogado'),
+        content: const Text(
+          'O acesso a esta base foi revogado. Procure o suporte da sua '
+          'empresa para regularizar a situação.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showMessage(
@@ -1018,8 +1127,8 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                                       color: _isFacePositioned
                                           ? Colors.green
                                           : _isFaceDetected
-                                              ? Colors.amber
-                                              : Colors.white,
+                                          ? Colors.amber
+                                          : Colors.white,
                                       width: 3,
                                     ),
                                   ),
@@ -1059,6 +1168,41 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                       ],
                     ),
                   ),
+                  if (isDebugFaceValidationBypassEnabled) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade100,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade700),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange.shade900,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Modo de teste: validação facial ignorada',
+                              style: TextStyle(
+                                color: Colors.orange.shade900,
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   // Unit info card - novo layout
                   Container(
@@ -1302,10 +1446,11 @@ class _SelfieCaptureScreenState extends State<SelfieCaptureScreen> {
                         ),
                         elevation: 0,
                       ),
-                      onPressed: _isRegistering ||
+                      onPressed:
+                          _isRegistering ||
                               !_podeRegistrarPlantaoAtual() ||
                               (_getTextoBotao() == 'Iniciar plantão' &&
-                                  !_isFacePositioned)
+                                  !_isFaceValidationSatisfied)
                           ? null
                           : _captureImage,
                       child: _isRegistering

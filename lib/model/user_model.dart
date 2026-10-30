@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 class UserModel {
   final int id;
   final String nome;
@@ -24,6 +26,14 @@ class UserModel {
       email: json['email'],
       database: json['database'] ?? '',
     );
+  }
+
+  /// Mesma coisa que [UserModel.fromJson], mas aceitando a string JSON crua
+  /// (ex.: o blob legado guardado em `SharedPreferences`) e decodificando
+  /// internamente — evita que cada call site tenha que repetir
+  /// `jsonDecode(... as Map<String, dynamic>)`.
+  factory UserModel.fromJsonString(String jsonString) {
+    return UserModel.fromJson(jsonDecode(jsonString) as Map<String, dynamic>);
   }
 
   Map<String, dynamic> toJson() {

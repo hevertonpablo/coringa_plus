@@ -6,6 +6,9 @@ import 'package:uuid/uuid.dart';
 import '../model/pending_registro.dart';
 import '../model/plantao_model.dart';
 import '../services/connectivity_service.dart';
+import '../services/http_exceptions.dart';
+import '../services/local_profile_registry.dart';
+import '../services/offline_cache_service.dart';
 import '../services/pending_registro_queue.dart';
 import '../services/registro_service.dart';
 
@@ -16,11 +19,7 @@ class RegistroResult {
   final Map<String, dynamic>? response;
   final PendingRegistro? pending;
 
-  const RegistroResult._({
-    required this.isQueued,
-    this.response,
-    this.pending,
-  });
+  const RegistroResult._({required this.isQueued, this.response, this.pending});
 
   factory RegistroResult.online(Map<String, dynamic> response) =>
       RegistroResult._(isQueued: false, response: response);
@@ -37,9 +36,18 @@ class RegistroRepository {
   final RegistroService _registroService;
   final PendingRegistroQueue _queue;
   final ConnectivityService _connectivity;
+  final OfflineCacheService _cache;
+  final LocalProfileRegistry _localProfileRegistry;
   final _uuid = const Uuid();
 
-  RegistroRepository(this._registroService, this._queue, this._connectivity);
+  RegistroRepository(
+    this._registroService,
+    this._queue,
+    this._connectivity,
+    this._cache, {
+    LocalProfileRegistry? localProfileRegistry,
+  }) : _localProfileRegistry =
+            localProfileRegistry ?? LocalProfileRegistry.instance;
 
   Future<RegistroResult> registrarPonto({
     required Plantao plantao,
@@ -79,10 +87,30 @@ class RegistroRepository {
           selfieFile: selfieFile,
         );
         return RegistroResult.online(response);
+      } on ApiRejectedException catch (e) {
+        // CORINGA-15: o backend rejeitou a batida. Isso NÃO é
+        // "sinal instável" — é uma decisão do servidor. Mas nem todo
+        // ApiRejectedException é "acesso revogado":
+        //   - 401/403 (token global inválido) → o profile local não
+        //     presta mais; marca como revoked e re-lança pra UI
+        //     exibir modal.
+        //   - 400/404/422 (erro de validação: plantão não existe,
+        //     horário fora da janela, base inválida) → re-lança pra
+        //     UI exibir o snackbar genérico, MAS NÃO marca como
+        //     revoked (seria desproporcional — o acesso à base em si
+        //     ainda é válido, foi só ESTA batida que falhou).
+        // A regra `e.isAccessRevoked` (extension em http_exceptions.dart)
+        // é compartilhada com a UI para garantir consistência.
+        if (e.isAccessRevoked) {
+          final scopeKey = _cache.scopeKey(database: database, userId: userId);
+          await _localProfileRegistry.markRevoked(scopeKey);
+        }
+        rethrow;
       } catch (_) {
         // connectivity_plus disse "online" mas a chamada falhou mesmo
-        // assim (sinal instável) — como o plantão é elegível para
-        // offline, cai para a fila em vez de barrar o profissional.
+        // assim (sinal instável, timeout, socket reset, ...) — como o
+        // plantão é elegível para offline, cai para a fila em vez de
+        // barrar o profissional.
       }
     }
 
@@ -117,9 +145,22 @@ class RegistroRepository {
       userId: userId,
       selfiePath: stablePath,
       createdAt: DateTime.now(),
+      payloadVersion: PendingRegistro.currentPayloadVersion,
     );
 
     await _queue.enqueue(pending);
+
+    // Atualização otimista do cache local: sem isso, o plantão continuaria
+    // aparecendo como pendente offline e o usuário conseguiria registrar a
+    // mesma entrada/saída várias vezes antes de reconectar.
+    final scopeKey = _cache.scopeKey(database: database, userId: userId);
+    await _cache.marcarPontoLocal(
+      scopeKey,
+      plantaoId: plantao.plantaoId,
+      tipo: tipo,
+      dataHora: dataHora,
+    );
+
     return pending;
   }
 

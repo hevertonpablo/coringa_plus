@@ -28,13 +28,14 @@ class PendingRegistroAdapter extends TypeAdapter<PendingRegistro> {
       createdAt: fields[9] as DateTime,
       lastErrorMessage: fields[10] as String?,
       syncedAt: fields[11] as DateTime?,
+      payloadVersion: fields[12] as int? ?? 0,
     );
   }
 
   @override
   void write(BinaryWriter writer, PendingRegistro obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -58,6 +59,8 @@ class PendingRegistroAdapter extends TypeAdapter<PendingRegistro> {
       ..writeByte(10)
       ..write(obj.lastErrorMessage)
       ..writeByte(11)
-      ..write(obj.syncedAt);
+      ..write(obj.syncedAt)
+      ..writeByte(12)
+      ..write(obj.payloadVersion);
   }
 }
